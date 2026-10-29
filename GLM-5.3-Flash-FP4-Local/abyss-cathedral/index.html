@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Drowned Cathedral</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #010409; }
+  canvas { display: block; width: 100vw; height: 100vh; cursor: crosshair; }
+  #ui {
+    position: fixed; inset: 0; pointer-events: none;
+    display: flex; flex-direction: column; justify-content: flex-end;
+    align-items: center; padding-bottom: 6vh;
+    font-family: Georgia, 'Times New Roman', serif;
+    color: rgba(190, 225, 235, 0.85);
+    text-align: center;
+    transition: opacity 3s ease;
+  }
+  #title {
+    font-size: clamp(22px, 3.4vw, 44px);
+    letter-spacing: 0.55em;
+    text-indent: 0.55em;
+    font-weight: normal;
+    text-shadow: 0 0 24px rgba(120, 200, 220, 0.35);
+    opacity: 0; animation: emerge 5s ease 1.2s forwards;
+  }
+  #sub {
+    margin-top: 14px;
+    font-size: clamp(11px, 1.2vw, 15px);
+    letter-spacing: 0.35em; text-indent: 0.35em;
+    opacity: 0; animation: emerge 5s ease 2.8s forwards;
+  }
+  @keyframes emerge { to { opacity: 1; } }
+  #ui.hide { opacity: 0; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="title">THE DROWNED CATHEDRAL</div>
+  <div id="sub">move to look around &nbsp;·&nbsp; click for sound &nbsp;·&nbsp; scroll to drift</div>
+</div>
+<script>
+'use strict';
+
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', { antialias: false });
+if (!gl) {
+  document.body.innerHTML = '<p style="color:#9cc;padding:2em;font-family:serif">WebGL2 is required.</p>';
+  throw new Error('no webgl2');
+}
+
+const VERT = `#version 300 es
+in vec2 p; void main(){ gl_Position = vec4(p,0.,1.); }`;
+
+const FRAG = `#version 300 es
+precision highp float;
+out vec4 outColor;
+uniform vec2  uRes;
+uniform float uTime;
+uniform vec2  uLook;   // yaw, pitch (radians)
+uniform float uDrift;  // camera height offset from scroll
+
+#define MAX_STEPS 96
+#define MAX_DIST  60.0
+#define SURF      0.0025
+
+const vec3 SUN_DIR = normalize(vec3(0.38, 1.0, 0.18)); // through the oculus, tilted
+
+// ---- hash / noise -----------------------------------------------------------
+float hash1(float n){ return fract(sin(n)*43758.5453123); }
+float hash1(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7)))*43758.5453123); }
+float hash1(vec3 p){ return fract(sin(dot(p, vec3(127.1, 311.7, 74.7)))*43758.5453123); }
+float noise(vec3 x){
+  vec3 i = floor(x), f = fract(x);
+  f = f*f*(3.0-2.0*f);
+  return mix(mix(mix(hash1(i+vec3(0,0,0)), hash1(i+vec3(1,0,0)), f.x),
+                 mix(hash1(i+vec3(0,1,0)), hash1(i+vec3(1,1,0)), f.x), f.y),
+             mix(mix(hash1(i+vec3(0,0,1)), hash1(i+vec3(1,0,1)), f.x),
+                 mix(hash1(i+vec3(0,1,1)), hash1(i+vec3(1,1,1)), f.x), f.y), f.z);
+}
+float fbm(vec3 p){
+  float a = 0.5, s = 0.0;
+  for(int i=0;i<4;i++){ s += a*noise(p); p = p*2.03 + 17.1; a *= 0.5; }
+  return s;
+}
+
+// ---- caustics ----------------------------------------------------------------
+float caustic(vec2 uv, float t){
+  float v = 0.0;
+  vec2 p = uv;
+  for(int i=0;i<3;i++){
+    float fi = float(i);
+    p += vec2(sin(t*0.7 + fi*2.1), cos(t*0.6 + fi*1.7))*0.35;
+    float w = sin(p.x*2.1 + t*1.3) * sin(p.y*1.7 - t*1.1);
+    v += abs(w);
+    p *= 1.9;
+  }
+  v = pow(v, 3.0);
+  return v;
+}
+
+// ---- signed distance field ---------------------------------------------------
+// returns vec2(distance, material id)
+vec2 sdScene(vec3 p){
+  // stone floor
+  float d = p.y + 3.0;
+  float mat = 1.0;
+
+  // outer walls: big cylinder with arched colonnade carved by columns
+  float wallR = 11.0;
+  float wall = wallR - length(p.xz);
+  wall = max(wall, -(p.y + 3.0));          // stop below floor
+  wall = min(wall, 14.0 - p.y);            // open top (dome above handles roof)
+
+  // columns: 12 around radius 8, each centered at its fold center
+  float cols = 1e9;
+  float ang = atan(p.z, p.x);
+  float r = length(p.xz);
+  float sect = 6.2831853/12.0;
+  float a = mod(ang, sect) - sect*0.5;
+  vec2 qc = vec2(r*cos(a) - 8.0, r*sin(a));   // local radial-plane coords
+  float col = length(qc) - 0.55;
+  col = max(col, abs(p.y) - 5.0);             // height 10
+  float base = max(length(qc) - 0.75, abs(p.y + 5.3) - 0.35);
+  float cap  = max(length(qc) - 0.78, abs(p.y - 5.35) - 0.4);
+  cols = min(col, min(base, cap));
+
+  // arches between columns: torus at y=6.6, radius 8
+  float ta = mod(ang + sect*0.5, sect) - sect*0.5;
+  vec3 t = vec3((r-8.0)*cos(ta), p.y - 6.6, (r-8.0)*sin(ta));
+  float arch = length(vec2(length(t.xz) - 1.1, t.y)) - 0.42;
+  arch = max(arch, abs(ta) - sect*0.52);  // only near the joint
+
+  // ring gallery
+  float ring = length(vec2(r - 9.5, p.y - 4.6)) - 0.5;
+
+  // central altar: stepped pedestal + glowing orb (orb excluded from SDF glow)
+  vec3 o = p - vec3(0.0, -2.4, 0.0);
+  float ped = max(length(o.xz) - 1.4, abs(o.y) - 0.5);
+  vec3 o2 = p - vec3(0.0, -3.0, 0.0);
+  ped = min(ped, max(length(o2.xz) - 2.0, abs(o2.y) - 0.4));
+  mat = 1.0;
+
+  d = min(d, wall); d = min(d, cols); d = min(d, arch); d = min(d, ring); d = min(d, ped);
+
+  // dome: sphere shell radius 11 centered below, with oculus hole
+  vec3 dc = vec3(0.0, 1.0, 0.0);
+  float dome = 11.0 - length(p - dc);
+  dome = max(dome, p.y - 1.0);  // only above y=1
+  // carve oculus: vertical cone around y-axis at top
+  float oculus = length(p.xz) - 2.2 - (13.0 - p.y)*0.28;
+  dome = max(dome, oculus);      // subtract (positive = outside hole)
+  d = min(d, dome);
+
+  return vec2(d, mat);
+}
+
+vec3 sdNormal(vec3 p){
+  vec2 e = vec2(0.002, 0.0);
+  return normalize(vec3(
+    sdScene(p+e.xyy).x - sdScene(p-e.xyy).x,
+    sdScene(p+e.yxy).x - sdScene(p-e.yxy).x,
+    sdScene(p+e.yyx).x - sdScene(p-e.yyx).x));
+}
+
+// ---- light shafts ------------------------------------------------------------
+float shaft(vec3 p, float t){
+  // cone of light falling from oculus (oculus radius 2.2 at y=13)
+  float r = length(p.xz);
+  float beam = 1.2 + max(13.0 - p.y, 0.0)*0.16;
+  float core = smoothstep(beam, beam*0.05, r);
+  float fade = smoothstep(-3.0, -0.5, p.y);
+  float n = fbm(vec3(p.xz*0.4, p.y*0.55 - t*0.5));
+  n = 0.1 + 1.9*n*n;
+  return core * fade * n;
+}
+
+// ---- sky / water surface above ----------------------------------------------
+vec3 aboveWater(vec3 rd){
+  // looking up through the oculus: shimmering surface and sun ball
+  float t = uTime;
+  float sun = pow(max(dot(rd, SUN_DIR), 0.0), 60.0);
+  float glow = pow(max(dot(rd, SUN_DIR), 0.0), 4.0);
+  float rip = fbm(vec3(rd.xz/max(rd.y,0.05)*3.0, t*0.4));
+  vec3 surf = mix(vec3(0.02,0.10,0.14), vec3(0.25,0.55,0.60), rip*rip);
+  return surf + vec3(1.0,0.95,0.8)*sun*3.0 + vec3(0.2,0.45,0.5)*glow*0.8;
+}
+
+void main(){
+  vec2 uv = (gl_FragCoord.xy*2.0 - uRes) / uRes.y;
+
+  // camera
+  float yaw = uLook.x;
+  float pitch = uLook.y;
+  float t = uTime;
+  // gentle idle drift when not looking
+  float camR = 5.2;
+  vec3 ro = vec3(cos(t*0.05)*camR, -0.6 + uDrift + sin(t*0.11)*0.25, sin(t*0.05)*camR);
+  // keep camera out of walls
+  float cr = length(ro.xz);
+  if (cr > 7.2) ro.xz *= 7.2/cr;
+
+  vec3 fw = vec3(sin(yaw)*cos(pitch), sin(pitch), -cos(yaw)*cos(pitch));
+  vec3 rt = normalize(cross(fw, vec3(0,1,0)));
+  vec3 up = cross(rt, fw);
+  vec3 rd = normalize(fw*1.35 + rt*uv.x + up*uv.y);
+
+  // raymarch
+  float dist = 0.0;
+  float mat = 0.0;
+  bool hit = false;
+  for(int i=0;i<MAX_STEPS;i++){
+    vec3 p = ro + rd*dist;
+    vec2 h = sdScene(p);
+    if (h.x < SURF){ hit = true; mat = h.y; break; }
+    dist += h.x*0.9;
+    if (dist > MAX_DIST) break;
+  }
+
+  vec3 col;
+  if (hit){
+    vec3 p = ro + rd*dist;
+    vec3 n = sdNormal(p);
+
+    // material albedo: stone with large-scale variation + tile pattern on floor
+    float stone = fbm(p*0.6);
+    vec3 alb = mix(vec3(0.32,0.30,0.27), vec3(0.42,0.42,0.40), stone);
+    if (p.y < -2.97){
+      vec2 tile = abs(fract(p.xz*0.5) - 0.5);
+      float grout = smoothstep(0.46, 0.5, max(tile.x, tile.y));
+      alb = mix(alb*0.85, alb*0.55, grout);
+      alb *= 0.9 + 0.2*noise(vec3(p.xz*2.0, 0.0));
+    }
+
+    // caustics projected on upward faces
+    float ca = caustic(p.xz*0.55 + p.y*0.15, uTime*0.8);
+    ca *= clamp(n.y*0.8 + 0.35, 0.0, 1.0);
+    ca *= 0.35 + 0.65*smoothstep(-3.0, 8.0, p.y);   // stronger closer to light
+
+    // lighting: sun from oculus + ambient
+    float dl = max(dot(n, SUN_DIR), 0.0);
+    // soft shadow: few steps toward sun
+    float sh = 1.0;
+    float sd = 0.4;
+    for(int i=0;i<12;i++){
+      vec3 sp = p + SUN_DIR*sd;
+      float h = sdScene(sp).x;
+      sh = min(sh, smoothstep(0.0, 1.0, h/(0.15*sd)));
+      sd += clamp(h, 0.25, 1.5);
+      if (sh < 0.02 || sd > 14.0) break;
+    }
+    float ao = 1.0;
+    {
+      float a = sdScene(p + n*0.25).x / 0.25;
+      ao = clamp(a*0.6 + 0.4, 0.0, 1.0);
+    }
+
+    vec3 sunCol = vec3(1.0, 0.92, 0.72);
+    vec3 amb = vec3(0.16, 0.28, 0.32) * (0.55 + 0.45*clamp(n.y*0.5+0.5, 0.0, 1.0));
+    col = alb * (sunCol * dl * sh * 1.5 + amb * ao);
+    // cool fill bounce so vertical architecture reads
+    float fl = max(dot(n, normalize(vec3(-0.55, 0.25, 0.45))), 0.0);
+    col += alb * vec3(0.10, 0.17, 0.19) * fl * ao;
+    col += sunCol * ca * 0.5 * sh;
+
+    // underwater fog toward deep teal
+    float fogAmt = 1.0 - exp(-dist*0.045);
+    col = mix(col, vec3(0.035, 0.11, 0.14), fogAmt);
+  } else {
+    // escaped: mostly upward = water surface
+    col = aboveWater(rd);
+    float fogAmt = 1.0 - exp(-MAX_DIST*0.045);
+    col = mix(col, vec3(0.035, 0.11, 0.14), fogAmt*0.8);
+  }
+
+  // volumetric god rays: march a few taps along the view ray
+  float acc = 0.0;
+  float vd = 0.5;
+  for(int i=0;i<32;i++){
+    vec3 vp = ro + rd*vd;
+    acc += shaft(vp, uTime);
+    vd += 0.55;
+    if (vd > 26.0) break;
+  }
+  acc *= 0.22 * (0.35 + 0.65*pow(max(dot(rd, SUN_DIR), 0.0), 1.5));
+  col += vec3(0.55, 0.75, 0.72) * acc;
+
+  // altar orb: analytic sphere + bloom
+  {
+    vec3 orbC = vec3(0.0, -1.25, 0.0);
+    float orbR = 0.38;
+    float pulse = 0.85 + 0.15*sin(uTime*1.7) + 0.06*sin(uTime*4.3);
+    vec3 oc = ro - orbC;
+    float b = dot(oc, rd);
+    float c = dot(oc, oc) - orbR*orbR;
+    float h = b*b - c;
+    if (h > 0.0){
+      float ts = -b - sqrt(h);
+      if (ts > 0.0 && (ts < dist || !hit)){
+        vec3 n = normalize(ro + rd*ts - orbC);
+        float fres = pow(1.0 - abs(dot(n, rd)), 2.0);
+        vec3 core = vec3(0.55, 1.0, 0.9);
+        col = core * (0.6 + 1.8*fres) * pulse;
+      }
+    }
+    float gd = length(orbC - ro);
+    vec3 gdir = (orbC - ro)/gd;
+    float g = pow(max(dot(rd, gdir), 0.0), 90.0);
+    col += vec3(0.25, 0.75, 0.65) * g * 1.6 * pulse;
+    float halo = exp(-gd*0.22);
+    col += vec3(0.04, 0.15, 0.13) * halo * pulse * 0.9;
+  }
+
+  // floating motes: parallax layers
+  for(int i=0;i<2;i++){
+    float fi = float(i)+1.0;
+    vec2 mp = uv*fi*2.2 + vec2(t*0.017*fi, -t*0.011*fi);
+    vec2 cell = floor(mp);
+    vec2 f = fract(mp) - 0.5;
+    vec2 off = vec2(hash1(cell), hash1(cell+7.3)) - 0.5;
+    float d = length(f - off*0.6);
+    float m = smoothstep(0.045, 0.0, d) * step(0.72, hash1(cell+3.1));
+    col += vec3(0.6, 0.8, 0.8) * m * 0.35;
+  }
+
+  // grade: lift blacks slightly teal, vignette, grain
+  col = col*1.05 + vec3(0.004, 0.012, 0.016);
+  col = pow(col, vec3(0.9));
+  float vig = 1.0 - 0.35*length(uv)*length(uv);
+  col *= vig;
+  col += (hash1(gl_FragCoord.xy + t) - 0.5) * 0.02;
+
+  outColor = vec4(col, 1.0);
+}`;
+
+function compile(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)){
+    console.error(gl.getShaderInfoLog(s));
+    throw new Error('shader compile failed');
+  }
+  return s;
+}
+const prog = gl.createProgram();
+gl.attachShader(prog, compile(gl.VERTEX_SHADER, VERT));
+gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FRAG));
+gl.linkProgram(prog);
+if (!gl.getProgramParameter(prog, gl.LINK_STATUS)){
+  console.error(gl.getProgramInfoLog(prog));
+  throw new Error('link failed');
+}
+gl.useProgram(prog);
+
+const vao = gl.createVertexArray();
+gl.bindVertexArray(vao);
+const buf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+const loc = gl.getAttribLocation(prog, 'p');
+gl.enableVertexAttribArray(loc);
+gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+
+const uRes   = gl.getUniformLocation(prog, 'uRes');
+const uTime  = gl.getUniformLocation(prog, 'uTime');
+const uLook  = gl.getUniformLocation(prog, 'uLook');
+const uDrift = gl.getUniformLocation(prog, 'uDrift');
+
+function resize(){
+  const dpr = Math.min(devicePixelRatio || 1, 1.75);
+  canvas.width  = Math.floor(innerWidth * dpr);
+  canvas.height = Math.floor(innerHeight * dpr);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+}
+addEventListener('resize', resize);
+resize();
+
+// ---- interaction ---------------------------------------------------------------
+let yaw = -Math.PI/2, pitch = -0.05;
+let targetYaw = -Math.PI/2, targetPitch = -0.05;
+let lastInput = 0;
+let drift = 0, targetDrift = 0;
+
+addEventListener('mousemove', e => {
+  targetYaw   = (e.clientX / innerWidth  - 0.5) * 2.4;
+  targetPitch = -(e.clientY / innerHeight - 0.5) * 1.1;
+  targetPitch = Math.max(-0.55, Math.min(0.75, targetPitch));
+  lastInput = performance.now();
+});
+addEventListener('wheel', e => {
+  targetDrift = Math.max(-1.2, Math.min(3.4, targetDrift - e.deltaY*0.004));
+  lastInput = performance.now();
+}, { passive: true });
+
+// ---- ambient sound (start on click) ---------------------------------------------
+let audioStarted = false;
+addEventListener('click', () => {
+  if (audioStarted) return;
+  audioStarted = true;
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const master = ctx.createGain();
+  master.gain.value = 0;
+  master.connect(ctx.destination);
+  master.gain.linearRampToValueAtTime(0.16, ctx.currentTime + 6);
+
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass'; lp.frequency.value = 420; lp.Q.value = 0.4;
+  lp.connect(master);
+
+  // deep drone: detuned sines + filtered noise wash
+  [55.0, 55.6, 110.3, 164.8].forEach((f, i) => {
+    const o = ctx.createOscillator();
+    o.type = 'sine'; o.frequency.value = f;
+    const g = ctx.createGain(); g.gain.value = [0.5, 0.5, 0.14, 0.06][i];
+    o.connect(g); g.connect(lp); o.start();
+  });
+  const len = ctx.sampleRate * 2;
+  const nb = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = nb.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random()*2 - 1;
+  const ns = ctx.createBufferSource();
+  ns.buffer = nb; ns.loop = true;
+  const nf = ctx.createBiquadFilter();
+  nf.type = 'bandpass'; nf.frequency.value = 300; nf.Q.value = 0.6;
+  const ng = ctx.createGain(); ng.gain.value = 0.05;
+  ns.connect(nf); nf.connect(ng); ng.connect(lp); ns.start();
+
+  // slow breathing LFO on the filter
+  const lfo = ctx.createOscillator();
+  lfo.frequency.value = 0.06;
+  const lg = ctx.createGain(); lg.gain.value = 140;
+  lfo.connect(lg); lg.connect(lp.frequency); lfo.start();
+
+  const ui = document.getElementById('ui');
+  ui.classList.add('hide');
+});
+
+// ---- loop -------------------------------------------------------------------------
+const t0 = performance.now();
+function frame(){
+  const t = (performance.now() - t0) / 1000;
+  // ease camera; drift back to idle sway after 4s of no input
+  yaw   += (targetYaw - yaw) * 0.045;
+  pitch += (targetPitch - pitch) * 0.045;
+  if (performance.now() - lastInput > 4000){
+    const th = t*0.05;                       // matches camera orbit angle
+    targetYaw = th - Math.PI/2 + Math.sin(t*0.06)*0.45;
+    targetPitch = -0.03 + Math.sin(t*0.043)*0.12;
+  }
+  drift += (targetDrift - drift) * 0.03;
+  gl.uniform2f(uRes, canvas.width, canvas.height);
+  gl.uniform1f(uTime, t);
+  gl.uniform2f(uLook, yaw, pitch);
+  gl.uniform1f(uDrift, drift);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  requestAnimationFrame(frame);
+}
+frame();
+</script>
+</body>
+</html>

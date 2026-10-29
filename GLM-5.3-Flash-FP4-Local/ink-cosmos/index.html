@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>墨の宇宙 — INK COSMOS</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #000; }
+  canvas { display: block; width: 100vw; height: 100vh; cursor: crosshair; }
+  #ui {
+    position: fixed; inset: 0; pointer-events: none;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-family: "Hiragino Mincho ProN", "Yu Mincho", serif;
+    color: rgba(255, 250, 240, 0.92);
+    transition: opacity 2.5s ease;
+    text-align: center;
+  }
+  #ui.hidden { opacity: 0; }
+  #title {
+    font-size: clamp(2.2rem, 7vw, 5.5rem);
+    letter-spacing: 0.35em;
+    text-indent: 0.35em;
+    font-weight: 300;
+    text-shadow: 0 0 30px rgba(255,255,255,0.25);
+  }
+  #sub {
+    margin-top: 1.2em;
+    font-size: clamp(0.7rem, 1.4vw, 1rem);
+    letter-spacing: 0.6em; text-indent: 0.6em;
+    color: rgba(255,250,240,0.55);
+  }
+  #hint {
+    position: fixed; bottom: 4vh; left: 0; right: 0; text-align: center;
+    pointer-events: none;
+    font-family: "Hiragino Mincho ProN", "Yu Mincho", serif;
+    font-size: 0.72rem; letter-spacing: 0.4em; text-indent: 0.4em;
+    color: rgba(255,250,240,0.35);
+    transition: opacity 2s ease;
+  }
+  #hint.hidden { opacity: 0; }
+  #soundToggle {
+    position: fixed; bottom: 3.5vh; left: 4vw;
+    font-family: "Hiragino Mincho ProN", "Yu Mincho", serif;
+    font-size: 0.75rem; letter-spacing: 0.3em;
+    color: rgba(255,250,240,0.45);
+    background: none; border: 1px solid rgba(255,250,240,0.18);
+    padding: 0.45em 1em 0.45em 1.3em;
+    cursor: pointer; pointer-events: auto;
+    transition: color 0.4s ease, border-color 0.4s ease;
+  }
+  #soundToggle:hover { color: rgba(255,250,240,0.85); border-color: rgba(255,250,240,0.4); }
+  #sceneName {
+    position: fixed; top: 4vh; right: 5vw;
+    writing-mode: vertical-rl;
+    font-family: "Hiragino Mincho ProN", "Yu Mincho", serif;
+    font-size: clamp(1rem, 2vw, 1.6rem);
+    letter-spacing: 0.5em;
+    color: rgba(255,250,240,0.4);
+    transition: opacity 1.5s ease;
+  }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="ui">
+  <div id="title">墨の宇宙</div>
+  <div id="sub">I N K &nbsp; C O S M O S</div>
+</div>
+<div id="sceneName">序 · 波</div>
+<button id="soundToggle">音 ON</button>
+<div id="hint">触れて · クリックして · 形は変わる</div>
+<script>
+'use strict';
+
+// ---------------------------------------------------------------- atlas
+// Pre-render kanji glyphs into a texture atlas (8x8 grid).
+const CHARS = "光闇風海空夢神星月火水木金土山川波雲花鳥魚竜虎桜雪雨雷命心魂愛幻影響音色界門道法天地幽玄静寂滅無限環舞刻墨筆紙硯詩歌百千万億夜朝春夏秋冬";
+const ATLAS_N = 8, CELL = 64, ATLAS_PX = ATLAS_N * CELL;
+const glyphCount = Math.min(CHARS.length, ATLAS_N * ATLAS_N);
+
+function buildAtlas() {
+  const c = document.createElement('canvas');
+  c.width = c.height = ATLAS_PX;
+  const g = c.getContext('2d');
+  g.clearRect(0, 0, ATLAS_PX, ATLAS_PX);
+  g.fillStyle = '#fff';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.font = `48px "Hiragino Mincho ProN", "Yu Mincho", serif`;
+  for (let i = 0; i < glyphCount; i++) {
+    const x = (i % ATLAS_N) * CELL + CELL / 2;
+    const y = Math.floor(i / ATLAS_N) * CELL + CELL / 2 + 2;
+    g.fillText(CHARS[i], x, y);
+  }
+  return c;
+}
+
+// ---------------------------------------------------------------- gl setup
+const canvas = document.getElementById('gl');
+const gl = canvas.getContext('webgl', { alpha: false, antialias: false, preserveDrawingBuffer: false });
+
+function compile(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+function program(vs, fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  return p;
+}
+
+const PARTICLE_VS = `
+attribute vec2 aPos;
+attribute float aSize;
+attribute vec2 aCell;
+attribute vec3 aCol;
+attribute float aAlpha;
+uniform vec2 uRes;
+varying vec2 vCell;
+varying vec3 vCol;
+varying float vAlpha;
+void main() {
+  vec2 clip = (aPos / uRes) * 2.0 - 1.0;
+  gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
+  gl_PointSize = aSize;
+  vCell = aCell;
+  vCol = aCol;
+  vAlpha = aAlpha;
+}`;
+
+const PARTICLE_FS = `
+precision mediump float;
+uniform sampler2D uAtlas;
+varying vec2 vCell;
+varying vec3 vCol;
+varying float vAlpha;
+void main() {
+  vec2 uv = (vCell + gl_PointCoord) / ${ATLAS_N.toFixed(1)};
+  vec4 tex = texture2D(uAtlas, uv);
+  float a = tex.a * vAlpha;
+  gl_FragColor = vec4(vCol * a, a);
+}`;
+
+const FADE_VS = `
+attribute vec2 aPos;
+void main() { gl_Position = vec4(aPos, 0.0, 1.0); }`;
+
+const FADE_FS = `
+precision mediump float;
+uniform float uFade;
+void main() { gl_FragColor = vec4(0.0, 0.0, 0.0, uFade); }`;
+
+const particleProg = program(PARTICLE_VS, PARTICLE_FS);
+const fadeProg = program(FADE_VS, FADE_FS);
+
+// fullscreen quad for the fade (motion-trail) pass
+const quadBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+
+// ---------------------------------------------------------------- particles
+const N = 16000;
+const px = new Float32Array(N), py = new Float32Array(N);
+const vx = new Float32Array(N), vy = new Float32Array(N);
+const tx = new Float32Array(N), ty = new Float32Array(N);
+const sizeArr = new Float32Array(N);
+const cellArr = new Float32Array(N * 2);
+const colArr = new Float32Array(N * 3);
+const alphaArr = new Float32Array(N);
+const phase = new Float32Array(N);   // per-particle random phase
+const glyph = new Uint8Array(N);     // atlas index
+const personal = new Float32Array(N); // target offset seed
+
+for (let i = 0; i < N; i++) {
+  px[i] = (Math.random() - 0.5) * 4000;
+  py[i] = (Math.random() - 0.5) * 4000;
+  vx[i] = vy[i] = 0;
+  phase[i] = Math.random() * Math.PI * 2;
+  personal[i] = Math.random();
+  const g = Math.floor(Math.random() * glyphCount);
+  glyph[i] = g;
+  cellArr[i * 2] = g % ATLAS_N;
+  cellArr[i * 2 + 1] = Math.floor(g / ATLAS_N);
+  // ink tone: mostly warm white, some vermilion, some indigo
+  const r = Math.random();
+  let cr, cg, cb;
+  if (r < 0.82)      { cr = 0.92; cg = 0.90; cb = 0.85; }   // white ink
+  else if (r < 0.93) { cr = 0.90; cg = 0.32; cb = 0.18; }   // vermilion (朱)
+  else               { cr = 0.25; cg = 0.45; cb = 0.85; }   // indigo (藍)
+  colArr[i * 3] = cr; colArr[i * 3 + 1] = cg; colArr[i * 3 + 2] = cb;
+  sizeArr[i] = 10 + Math.random() * 26;
+}
+
+const posArr = new Float32Array(N * 2); // interleaved x,y
+const posBuf = gl.createBuffer();
+const sizeBuf = gl.createBuffer();
+const cellBuf = gl.createBuffer();
+const colBuf = gl.createBuffer();
+const alphaBuf = gl.createBuffer();
+
+function bindAttrib(prog, name, buf, comps, arr) {
+  const loc = gl.getAttribLocation(prog, name);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, arr, gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, comps, gl.FLOAT, false, 0, 0);
+  return loc;
+}
+
+// disable all vertex attrib arrays (state is global, leaks across programs)
+function disableAttribs() {
+  for (let a = 0; a < 8; a++) gl.disableVertexAttribArray(a);
+}
+
+// atlas texture
+const atlasTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, atlasTex);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, buildAtlas());
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+// ---------------------------------------------------------------- state
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = W * DPR; canvas.height = H * DPR;
+  gl.viewport(0, 0, canvas.width, canvas.height);
+}
+window.addEventListener('resize', resize);
+resize();
+
+const mouse = { x: -9999, y: -9999, active: false };
+window.addEventListener('pointermove', e => { mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true; });
+window.addEventListener('pointerleave', () => { mouse.active = false; });
+
+const SCENES = ['波', '渦', '鳥居', '環'];
+const SCENE_LABELS = ['序 · 波', '弐 · 渦', '参 · 鳥居', '肆 · 環'];
+const SCENE_COLORS = [
+  [0.75, 0.85, 1.00],   // wave: moonlit blue
+  [1.00, 0.80, 0.55],   // galaxy: ember gold
+  [0.95, 0.60, 0.45],   // torii: vermilion dusk
+  [0.60, 1.00, 0.85],   // ring: jade
+];
+let sceneIdx = 0;
+let colorMix = 1;              // eases 0->1 on scene change
+let colorFrom = SCENE_COLORS[0].slice();
+let colorTo = SCENE_COLORS[0].slice();
+let sceneStart = performance.now();
+let burstT = -10;              // time of last click burst
+let burstX = 0, burstY = 0;
+
+const uiEl = document.getElementById('ui');
+const hintEl = document.getElementById('hint');
+const sceneEl = document.getElementById('sceneName');
+let uiHidden = false;
+function hideIntro() {
+  if (uiHidden) return;
+  uiHidden = true;
+  uiEl.classList.add('hidden');
+  setTimeout(() => hintEl.classList.add('hidden'), 9000);
+}
+setTimeout(hideIntro, 7000);
+
+function setScene(idx) {
+  sceneIdx = idx % SCENES.length;
+  colorFrom = colorTo.slice();
+  colorTo = SCENE_COLORS[sceneIdx].slice();
+  colorMix = 0;
+  sceneStart = performance.now();
+  sceneEl.textContent = SCENE_LABELS[sceneIdx];
+  sceneEl.style.opacity = '1';
+  setTimeout(() => { sceneEl.style.opacity = '0'; }, 4000);
+}
+sceneEl.style.opacity = '0';
+setTimeout(() => sceneEl.style.opacity = '1', 100);
+
+// ---------------------------------------------------------------- audio
+let audioCtx = null, master = null, delaySend = null;
+let lastPluck = 0;
+
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  master = audioCtx.createGain();
+  master.gain.value = 0.0;
+  master.connect(audioCtx.destination);
+
+  // space: feedback delay
+  const delay = audioCtx.createDelay(2.0);
+  delay.delayTime.value = 0.42;
+  const fb = audioCtx.createGain(); fb.gain.value = 0.45;
+  const wet = audioCtx.createGain(); wet.gain.value = 0.35;
+  delaySend = audioCtx.createGain();
+  delaySend.connect(delay);
+  delay.connect(fb); fb.connect(delay);
+  delay.connect(wet); wet.connect(master);
+
+  // drone: two detuned sines, slow swell
+  const droneGain = audioCtx.createGain();
+  droneGain.gain.value = 0.0;
+  droneGain.connect(master);
+  const droneFilter = audioCtx.createBiquadFilter();
+  droneFilter.type = 'lowpass'; droneFilter.frequency.value = 220;
+  droneGain.connect(droneFilter); droneFilter.connect(master);
+  [55, 55.7, 110.3].forEach((f, k) => {
+    const o = audioCtx.createOscillator();
+    o.type = 'sine'; o.frequency.value = f;
+    const g = audioCtx.createGain(); g.gain.value = k === 2 ? 0.08 : 0.15;
+    o.connect(g); g.connect(droneGain);
+    o.start();
+  });
+  // slow LFO on drone volume
+  const lfo = audioCtx.createOscillator();
+  lfo.frequency.value = 0.05;
+  const lfoGain = audioCtx.createGain(); lfoGain.gain.value = 0.02;
+  lfo.connect(lfoGain); lfoGain.connect(droneGain.gain);
+  lfo.start();
+  droneGain.gain.linearRampToValueAtTime(0.06, audioCtx.currentTime + 8);
+}
+
+// D minor pentatonic-ish (Japanese in-sen scale feel: D, Eb, G, A, C)
+const SCALE = [146.83, 155.56, 196.00, 220.00, 261.63, 293.66, 311.13, 392.00, 440.00, 523.25];
+
+function pluck(freq, when, vel) {
+  const t = audioCtx.currentTime + when;
+  const o = audioCtx.createOscillator();
+  o.type = 'triangle';
+  o.frequency.value = freq;
+  const f = audioCtx.createBiquadFilter();
+  f.type = 'lowpass';
+  f.frequency.setValueAtTime(freq * 6, t);
+  f.frequency.exponentialRampToValueAtTime(freq * 1.5, t + 1.2);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(vel, t + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 2.4);
+  o.connect(f); f.connect(g); g.connect(master); g.connect(delaySend);
+  o.start(t); o.stop(t + 2.6);
+}
+
+function schedAudio(now) {
+  if (!audioCtx || now - lastPluck < 1800) return;
+  lastPluck = now;
+  const n = 1 + Math.floor(Math.random() * 3);
+  for (let k = 0; k < n; k++) {
+    const f = SCALE[Math.floor(Math.random() * SCALE.length)];
+    pluck(f, Math.random() * 1.4, 0.05 + Math.random() * 0.06);
+  }
+}
+
+// sound is ON by default; browsers require a gesture before audio can start
+let audioOn = true;
+const soundToggleEl = document.getElementById('soundToggle');
+window.addEventListener('pointerdown', () => {
+  if (audioCtx) return;
+  initAudio();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  master.gain.cancelScheduledValues(audioCtx.currentTime);
+  master.gain.linearRampToValueAtTime(audioOn ? 0.9 : 0.0, audioCtx.currentTime + 0.8);
+}, { once: true });
+soundToggleEl.addEventListener('click', e => {
+  e.stopPropagation();
+  if (!audioCtx) initAudio();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  audioOn = !audioOn;
+  const target = audioOn ? 0.9 : 0.0;
+  master.gain.cancelScheduledValues(audioCtx.currentTime);
+  master.gain.linearRampToValueAtTime(target, audioCtx.currentTime + 0.8);
+  soundToggleEl.textContent = audioOn ? '音 ON' : '音 OFF';
+});
+
+// click => burst + morph
+window.addEventListener('click', e => {
+  burstT = performance.now() / 1000;
+  burstX = e.clientX; burstY = e.clientY;
+  setScene(sceneIdx + 1);
+  hideIntro();
+  if (audioCtx && audioOn) {
+    // struck chord on morph
+    const root = SCALE[Math.floor(Math.random() * 5)];
+    pluck(root, 0, 0.12);
+    pluck(root * 1.5, 0.07, 0.09);
+    pluck(root * 2, 0.14, 0.07);
+  }
+});
+
+// auto-cycle when idle
+let lastInteract = performance.now();
+window.addEventListener('pointerdown', () => lastInteract = performance.now());
+window.addEventListener('pointermove', () => lastInteract = performance.now());
+
+// ---------------------------------------------------------------- scene targets
+// All targets in screen pixels. Each scene function fills tx/ty and returns
+// per-particle depth (0..1, used for alpha/size modulation).
+const depth = new Float32Array(N);
+
+function tWave(i, t) {
+  // a fraction of particles form a moon disc in the sky
+  if (personal[i] < 0.13) {
+    const f = personal[i] / 0.13;
+    const a = phase[i] + t * 0.04;
+    const r = Math.sqrt(f) * Math.min(W, H) * 0.13;
+    const mx = W * 0.72 + Math.cos(a) * r;
+    const my = H * 0.26 + Math.sin(a) * r * 0.96;
+    return [mx + Math.sin(t * 0.6 + phase[i]) * 3, my, 0.08, 3.2];
+  }
+  const cols = 128, rows = N / cols;
+  const cx = i % cols, cy = Math.floor(i / cols);
+  const gx = (cx / cols - 0.5) * W * 1.9;
+  const gz = cy / rows;
+  const z = gz;
+  const persp = 1 / (1 + z * 1.6);
+  const gy = Math.sin(gx * 0.004 + t * 0.9 + phase[i] * 0.06) * 110
+           + Math.cos(gx * 0.0016 - t * 0.5) * 150
+           + Math.sin(t * 1.7 + gz * 6) * 40;
+  const sx = W / 2 + gx * persp;
+  const sy = H * 0.56 + gy * persp + (1 - persp) * H * 0.14;
+  return [sx, sy, z];
+}
+
+function tGalaxy(i, t) {
+  const arm = i % 3;
+  const f = personal[i];
+  const r = Math.pow(f, 0.6) * Math.min(W, H) * 0.75;
+  const rot = t * 0.15 + arm * (Math.PI * 2 / 3) + r * 0.0035;
+  const spread = (phase[i] / (Math.PI * 2) - 0.5) * (0.25 + r * 0.0012);
+  const a = rot + spread;
+  const zz = (phase[i] / (Math.PI * 2)) * 0.5;
+  const persp = 1 / (1 + zz * 0.9);
+  const sx = W / 2 + Math.cos(a) * r * persp;
+  const sy = H / 2 + Math.sin(a) * r * persp * 0.92;
+  return [sx, sy, zz];
+}
+
+function tTorii(i, t) {
+  // torii gate outline sampled in normalized coords, plus drifting "dust"
+  const f = i / N;
+  let nx, ny, z;
+  const sway = Math.sin(t * 0.8 + phase[i]) * 4;
+  if (f < 0.72) {
+    // gate shape: pillars + double lintel (kasagi + nuki) + gakuzuka center
+    const s = f / 0.72;
+    const pts = toriiPoint(s);
+    nx = pts[0]; ny = pts[1]; z = pts[2];
+  } else {
+    // ground reflection: mirrored shimmer
+    const s = (f - 0.72) / 0.28;
+    nx = (s - 0.5) * 2.2;
+    ny = -0.62 - Math.abs(Math.sin(t * 2 + phase[i] * 3)) * 0.06 - s * 0.25;
+    z = 0.35;
+  }
+  const scale = Math.min(W, H) * 0.62;
+  const persp = 1 / (1 + z * 1.2);
+  const sx = W / 2 + nx * scale * persp + sway;
+  const sy = H / 2 - ny * scale * persp + H * 0.06;
+  return [sx, sy, z];
+}
+
+// sample a point on the torii outline; s in 0..1 walks the shape
+function toriiPoint(s) {
+  // pillars: 0..0.5, lintels: 0.5..1
+  if (s < 0.40) {
+    const p = s / 0.40;
+    const side = p < 0.5 ? -1 : 1;
+    const q = (p % 0.5) * 2;
+    return [side * 0.62 + (side * 0.045) * (q < 0.5 ? 1 : -1), -0.62 + q * 1.05, 0.15 + q * 0.15];
+  } else if (s < 0.62) {
+    // kasagi (top curved lintel)
+    const p = (s - 0.40) / 0.22;
+    const x = (p - 0.5) * 1.85;
+    const y = 0.46 + Math.cos((p - 0.5) * Math.PI) * 0.06;
+    return [x, y, 0.30];
+  } else if (s < 0.82) {
+    // nuki (lower crossbeam)
+    const p = (s - 0.62) / 0.20;
+    const x = (p - 0.5) * 1.55;
+    return [x, 0.16, 0.22];
+  } else {
+    // gakuzuka (center plaque) filled square
+    const p = (s - 0.82) / 0.18;
+    const a = p * Math.PI * 2;
+    const r = Math.sqrt(p) * 0.11;
+    return [Math.cos(a) * r, 0.30 + Math.sin(a) * r, 0.25];
+  }
+}
+
+function tRing(i, t) {
+  // three nested rotating rings (enso-like circles) around a void
+  const band = i % 3;
+  const f = personal[i];
+  const rr = Math.min(W, H) * (0.18 + band * 0.14) * (0.96 + Math.sin(t * 0.5 + band) * 0.04);
+  const a = f * Math.PI * 2 + t * (0.3 - band * 0.12) * (band % 2 ? -1 : 1);
+  const wob = Math.sin(a * 3 + t * 1.2 + band) * 0.02;
+  const zz = (phase[i] / (Math.PI * 2)) * 0.4;
+  const persp = 1 / (1 + zz);
+  const sx = W / 2 + Math.cos(a) * rr * (1 + wob) * persp;
+  const sy = H / 2 + Math.sin(a) * rr * (1 + wob) * persp;
+  return [sx, sy, zz];
+}
+
+const SCENE_FNS = [tWave, tGalaxy, tTorii, tRing];
+
+// ---------------------------------------------------------------- main loop
+const fadeLoc = gl.getUniformLocation(fadeProg, 'uFade');
+let prevTime = performance.now();
+
+function frame(nowMs) {
+  const now = nowMs;
+  const t = now / 1000;
+  const dt = Math.max(0, Math.min((now - prevTime) / 1000, 0.05));
+  prevTime = now;
+
+  // idle auto-cycle every 26s
+  if (now - lastInteract > 26000) { lastInteract = now; setScene(sceneIdx + 1); }
+
+  colorMix += (1 - colorMix) * (1 - Math.exp(-dt * 2.5));
+  const sinceBurst = t - burstT;
+  const burstEnergy = sinceBurst < 2.2 ? Math.exp(-(sinceBurst * 2.2)) : 0;
+
+  const mixFrac = Math.min(1, colorMix);
+  const cr = colorFrom[0] + (colorTo[0] - colorFrom[0]) * mixFrac;
+  const cg = colorFrom[1] + (colorTo[1] - colorFrom[1]) * mixFrac;
+  const cb = colorFrom[2] + (colorTo[2] - colorFrom[2]) * mixFrac;
+
+  const fn = SCENE_FNS[sceneIdx];
+  const cx = W / 2, cy = H / 2;
+
+  for (let i = 0; i < N; i++) {
+    const tgt = fn(i, t);
+    tx[i] = tgt[0]; ty[i] = tgt[1]; depth[i] = tgt[2];
+    const alphaBoost = tgt.length > 3 ? tgt[3] : 1;
+
+    // spring toward target, stiffness varies per particle for organic lag
+    const k = 2.2 + personal[i] * 2.8;
+    const damp = 0.90;
+    vx[i] += (tx[i] - px[i]) * k * dt;
+    vy[i] += (ty[i] - py[i]) * k * dt;
+    vx[i] *= damp; vy[i] *= damp;
+
+    // mouse repulsion (soft, wide)
+    if (mouse.active) {
+      const dx = px[i] - mouse.x, dy = py[i] - mouse.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < 42000 && d2 > 1) {
+        const d = Math.sqrt(d2);
+        const force = (1 - d / 205) * 2600;
+        vx[i] += (dx / d) * force * dt;
+        vy[i] += (dy / d) * force * dt;
+      }
+    }
+
+    // click burst: radial shockwave
+    if (burstEnergy > 0.001) {
+      const dx = px[i] - burstX, dy = py[i] - burstY;
+      const d2 = dx * dx + dy * dy;
+      if (d2 > 1) {
+        const d = Math.sqrt(d2);
+        const wave = Math.max(0, 1 - Math.abs(d - sinceBurst * 900) / 160);
+        const force = wave * burstEnergy * 28;
+        vx[i] += (dx / d) * force;
+        vy[i] += (dy / d) * force;
+      }
+    }
+
+    px[i] += vx[i] * dt * 60;
+    py[i] += vy[i] * dt * 60;
+    posArr[i * 2] = px[i];
+    posArr[i * 2 + 1] = py[i];
+
+    // write buffers
+    const z = depth[i];
+    const persp = 1 / (1 + z * 1.0);
+    sizeArr[i] = (5 + personal[i] * 13) * persp * DPR * (1 + burstEnergy * 0.6);
+    const zFade = 0.25 + (1 - z) * 0.75;
+    alphaArr[i] = zFade * (0.055 + personal[i] * 0.11) * alphaBoost * (1 - Math.min(1, Math.abs(vx[i]) + Math.abs(vy[i])) / 2600);
+    // slight per-particle hue wobble on the scene color
+    const w = Math.sin(t * 0.7 + phase[i]) * 0.08;
+    colArr[i * 3]     = cr + w;
+    colArr[i * 3 + 1] = cg + w * 0.5;
+    colArr[i * 3 + 2] = cb - w * 0.5;
+  }
+
+  // fade pass (motion trail)
+  gl.useProgram(fadeProg);
+  disableAttribs();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+  const fLoc = gl.getAttribLocation(fadeProg, 'aPos');
+  gl.enableVertexAttribArray(fLoc);
+  gl.vertexAttribPointer(fLoc, 2, gl.FLOAT, false, 0, 0);
+  gl.uniform1f(fadeLoc, 0.16);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+  // particle pass
+  gl.useProgram(particleProg);
+  disableAttribs();
+  bindAttrib(particleProg, 'aPos', posBuf, 2, posArr);
+  bindAttrib(particleProg, 'aSize', sizeBuf, 1, sizeArr);
+  bindAttrib(particleProg, 'aCell', cellBuf, 2, cellArr);
+  bindAttrib(particleProg, 'aCol', colBuf, 3, colArr);
+  bindAttrib(particleProg, 'aAlpha', alphaBuf, 1, alphaArr);
+  const resLoc = gl.getUniformLocation(particleProg, 'uRes');
+  gl.uniform2f(resLoc, W, H);
+  gl.uniform1i(gl.getUniformLocation(particleProg, 'uAtlas'), 0);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, atlasTex);
+  gl.blendFunc(gl.ONE, gl.ONE);  // additive, already alpha-scaled
+  gl.drawArrays(gl.POINTS, 0, N);
+
+  schedAudio(now);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

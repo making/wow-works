@@ -1,0 +1,37 @@
+# wow-works
+
+Generated works stored for an experiment on [mia-ai.net/lab/experiments](https://mia-ai.net/lab/experiments).
+The following prompt was given verbatim to an LLM, and the resulting code is archived here
+unmodified, one directory per model.
+
+```text
+Build me something when people see it, they will say "Wow". Must be immersive, when people see it, they will be stunned by what they see.
+
+This can be a video, or anything else you can think of.
+
+Be creative. Go wild. Dig deep.
+
+No AI slop. Something unique, think outside of the box. Think big. Think amazing. Something no other model done before.
+
+Be proud. Show your best. Don't disappoint.
+```
+
+## Contents
+
+| Model | Work | Description |
+| --- | --- | --- |
+| `DeepSeek-V4.1-Flash-1017` | `harmonia` | A heliocentric instrument. Computes real planetary positions from JPL approximate Keplerian elements and sonifies their motion with browser-synthesised audio. See its own `README.md` for controls and model notes. |
+| `GLM-5.3-Flash-FP4-Local` | `abyss-cathedral` | "The Drowned Cathedral" — a WebGL2 scene; move the pointer to look around, click to enable sound, scroll to drift. |
+| `GLM-5.3-Flash-FP4-Local` | `ink-cosmos` | "墨の宇宙 / Ink Cosmos" — an interactive ink-wash cosmos that morphs on click and on pointer movement. |
+
+## Running
+
+Every work is a single self-contained `index.html` with no build step and no external
+dependencies. Open the file you want to view directly in a browser; no server is needed.
+
+Some works require WebGL2 or Web Audio and start audio only after a user gesture.
+
+## Notes
+
+- Directory names identify the model that produced the work; no other metadata is attached.
+- The code is preserved as generated. No shared stylesheet, framework, or cleanup was applied.
