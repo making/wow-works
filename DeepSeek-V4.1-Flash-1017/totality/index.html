@@ -1,0 +1,1209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Totality — a total eclipse over still water</title>
+<meta name="description" content="A composed total solar eclipse, rendered in real time: the moon's limb, the corona, the diamond ring, a 360-degree twilight, and a lake that holds all of it. Sound follows the light.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2304070c'/%3E%3Ccircle cx='16' cy='16' r='10' fill='%23efe6d4'/%3E%3Ccircle cx='16' cy='16' r='7.4' fill='%2304070c'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --void:#04070c;
+    --bone:#e9e1d2;
+    --ash:#9a9488;
+    --warm:#e0b98a;
+    --line:rgba(233,225,210,.16);
+    --line-dim:rgba(233,225,210,.07);
+    --serif:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Baskerville,Georgia,serif;
+    --mono:"SF Mono","IBM Plex Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--void);color:var(--bone);overflow:hidden}
+  body{font-family:var(--mono);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;background:#04070c}
+  body:not(.started) canvas{filter:saturate(.92) brightness(.72)}
+
+  #grain{
+    position:fixed;inset:-25%;pointer-events:none;z-index:30;opacity:.05;mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.6'/%3E%3C/svg%3E");
+    background-size:180px 180px;
+  }
+  #vignette{
+    position:fixed;inset:0;pointer-events:none;z-index:28;
+    background:radial-gradient(ellipse 82% 74% at 50% 50%, rgba(0,0,0,0) 46%, rgba(2,4,8,.34) 82%, rgba(2,4,8,.72) 100%);
+  }
+
+  /* ---------------- gate ---------------- */
+  #gate{
+    position:fixed;inset:0;z-index:60;display:grid;place-items:center;padding:32px;
+    background:
+      radial-gradient(ellipse 58% 52% at 50% 47%, rgba(6,10,18,.72), rgba(4,7,12,.90) 62%, rgba(4,7,12,.975) 100%);
+    transition:opacity 2.2s ease, visibility 2.2s;
+  }
+  body.started #gate{opacity:0;visibility:hidden;pointer-events:none}
+  .plate{position:relative;text-align:center;max-width:640px}
+  .corona{
+    width:150px;height:150px;margin:0 auto 34px;position:relative;border-radius:50%;
+    background:radial-gradient(circle,
+      rgba(255,246,232,.62) 0%,
+      rgba(255,244,226,.30) 21%,
+      rgba(255,240,220,.10) 36%,
+      rgba(255,238,216,.028) 52%,
+      rgba(255,236,212,0) 66%);
+    animation:breath 9s ease-in-out infinite;
+  }
+  .corona::before{
+    content:"";position:absolute;inset:31%;border-radius:50%;background:#04070c;
+    box-shadow:0 0 0 1px rgba(240,225,200,.06), 0 0 26px rgba(255,235,205,.10);
+  }
+  .corona::after{
+    content:"";position:absolute;inset:22%;border-radius:50%;border:1px solid rgba(233,225,210,.07);
+  }
+  @keyframes breath{
+    0%,100%{transform:scale(1);opacity:.9}
+    50%{transform:scale(1.045);opacity:1}
+  }
+  .kicker{
+    font-family:var(--serif);font-style:italic;font-size:13px;letter-spacing:.03em;
+    color:rgba(233,225,210,.52);margin:0 0 18px;
+  }
+  h1{
+    font-family:var(--serif);font-weight:400;font-size:clamp(46px,8.4vw,104px);
+    line-height:.96;letter-spacing:.035em;margin:0;color:var(--bone);
+    text-shadow:0 0 46px rgba(255,232,200,.10);
+  }
+  .rule{display:flex;align-items:center;justify-content:center;gap:14px;margin:28px auto 24px;width:min(340px,70vw)}
+  .rule::before,.rule::after{content:"";height:1px;flex:1;background:linear-gradient(90deg,transparent,var(--line))}
+  .rule::after{background:linear-gradient(90deg,var(--line),transparent)}
+  .rule span{width:4px;height:4px;transform:rotate(45deg);background:var(--warm);opacity:.55}
+  .lede{
+    font-family:var(--serif);font-size:clamp(14px,1.35vw,16.5px);line-height:1.8;
+    color:rgba(233,225,210,.68);margin:0 auto;max-width:33em;
+  }
+  #begin{
+    margin:34px auto 0;display:block;padding:13px 38px 12px;
+    background:transparent;border:1px solid rgba(224,185,138,.36);
+    color:var(--bone);font-family:var(--mono);font-size:10.5px;letter-spacing:.36em;
+    text-transform:lowercase;cursor:pointer;transition:background-color .5s ease,border-color .5s ease,color .5s ease;
+  }
+  #begin:hover,#begin:focus-visible{background:rgba(224,185,138,.07);border-color:rgba(224,185,138,.62);outline:none}
+  .note{
+    margin:20px 0 0;font-size:9.5px;letter-spacing:.24em;text-transform:lowercase;
+    color:rgba(233,225,210,.32);
+  }
+
+  /* ---------------- hud ---------------- */
+  #hud{position:fixed;inset:0;z-index:20;pointer-events:none;opacity:0;transition:opacity 1.6s ease}
+  body.started #hud{opacity:1}
+  body.idle #hud{opacity:.38}
+  body.hidden #hud{opacity:0}
+
+  #obscbar{
+    position:fixed;top:0;left:0;height:1px;width:100%;z-index:22;
+    background:rgba(233,225,210,.05);
+  }
+  #obscfill{height:100%;width:0;background:linear-gradient(90deg,rgba(224,185,138,.18),rgba(255,238,214,.72));transition:width .12s linear}
+
+  #readout{position:fixed;left:clamp(18px,3.2vw,44px);top:clamp(22px,4vh,48px)}
+  #phase{
+    font-size:9.5px;letter-spacing:.34em;text-transform:uppercase;color:rgba(233,225,210,.46);
+    margin:0 0 10px;transition:color .6s ease;
+  }
+  #phase.total{color:rgba(255,232,200,.9)}
+  #clock{
+    font-family:var(--mono);font-size:clamp(30px,4.4vw,46px);font-weight:200;line-height:1;
+    letter-spacing:.02em;font-variant-numeric:tabular-nums;color:rgba(233,225,210,.92);
+    text-shadow:0 0 30px rgba(255,235,205,.12);
+  }
+  #sub{margin:11px 0 0;font-size:9.5px;letter-spacing:.26em;text-transform:lowercase;color:rgba(233,225,210,.34)}
+
+  #hint{
+    position:fixed;right:clamp(18px,3.2vw,44px);bottom:clamp(18px,3.4vh,40px);
+    text-align:right;font-size:9px;line-height:2.1;letter-spacing:.2em;text-transform:lowercase;
+    color:rgba(233,225,210,.30);
+  }
+  #hint b{font-weight:400;color:rgba(233,225,210,.5)}
+
+  #rail{
+    position:fixed;left:50%;bottom:clamp(22px,4.2vh,52px);transform:translateX(-50%);
+    width:min(560px,72vw);height:24px;z-index:21;pointer-events:auto;cursor:ew-resize;
+    opacity:.55;transition:opacity .5s ease;
+  }
+  body.idle #rail{opacity:.24}
+  body.hidden #rail{opacity:0;pointer-events:none}
+  #track{position:absolute;left:0;right:0;top:50%;height:1px;background:rgba(233,225,210,.14)}
+  #fill{position:absolute;left:0;top:50%;height:1px;width:0;background:rgba(233,225,210,.55)}
+  #knob{
+    position:absolute;top:50%;width:5px;height:5px;margin:-2.5px 0 0 -2.5px;border-radius:50%;
+    background:rgba(255,246,232,.95);box-shadow:0 0 12px rgba(255,238,214,.65);
+  }
+  .tick{position:absolute;top:50%;width:1px;height:7px;margin-top:-3.5px;background:rgba(233,225,210,.24)}
+  .tlabel{position:absolute;top:-11px;transform:translateX(-50%);font-size:8px;letter-spacing:.18em;color:rgba(233,225,210,.25)}
+
+  #end{
+    position:fixed;left:50%;bottom:clamp(64px,9vh,110px);transform:translateX(-50%);
+    z-index:23;text-align:center;opacity:0;visibility:hidden;transition:opacity 1.4s ease,visibility 1.4s;
+  }
+  body.ended #end{opacity:1;visibility:visible}
+  body.ended #clock,body.ended #sub{opacity:.3}
+  #end p{font-family:var(--serif);font-style:italic;font-size:14px;color:rgba(233,225,210,.55);margin:0 0 14px}
+  #again{
+    background:transparent;border:1px solid rgba(233,225,210,.22);color:rgba(233,225,210,.7);
+    font-family:var(--mono);font-size:9px;letter-spacing:.3em;text-transform:lowercase;
+    padding:9px 22px 8px;cursor:pointer;transition:border-color .4s ease,color .4s ease;
+  }
+  #again:hover,#again:focus-visible{border-color:rgba(233,225,210,.5);color:var(--bone);outline:none}
+
+  #err{
+    position:fixed;inset:0;z-index:80;display:none;place-items:center;padding:30px;
+    background:rgba(4,7,12,.94);color:var(--bone);font-size:13px;line-height:1.7;white-space:pre-wrap;
+  }
+  #err.show{display:grid}
+
+  @media (max-width:640px){
+    #hint{display:none}
+    #rail{width:78vw}
+    #clock{font-size:32px}
+  }
+</style>
+</head>
+<body>
+<canvas id="scene" aria-label="A total solar eclipse over a still lake"></canvas>
+<div id="grain"></div>
+<div id="vignette"></div>
+<div id="err"></div>
+
+<div id="hud">
+  <div id="obscbar"><div id="obscfill"></div></div>
+  <div id="readout">
+    <p id="phase">partial eclipse</p>
+    <div id="clock">00:55</div>
+    <p id="sub">to second contact</p>
+  </div>
+  <div id="hint">
+    <div><b>drag</b> to look</div>
+    <div><b>scroll</b> to move through time</div>
+    <div><b>space</b> pause &nbsp; <b>h</b> hide</div>
+  </div>
+  <div id="rail" role="slider" aria-label="Eclipse timeline" tabindex="0" aria-valuemin="0" aria-valuemax="132" aria-valuenow="0">
+    <div id="track"></div>
+    <div id="fill"></div>
+    <div id="knob"></div>
+  </div>
+</div>
+
+<div id="end">
+  <p>The corona is gone. The light returns.</p>
+  <button id="again" type="button">again</button>
+</div>
+
+<div id="gate">
+  <div class="plate">
+    <div class="corona" aria-hidden="true"></div>
+    <p class="kicker">at the edge of a lake</p>
+    <h1>Totality</h1>
+    <div class="rule"><span></span></div>
+    <p class="lede">
+      An hour of approach, compressed; inside the shadow, time runs true.
+      The sun, the moon and the water are computed, not filmed.
+    </p>
+    <button id="begin" type="button">begin</button>
+    <p class="note">sound begins with you &middot; drag to look</p>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   Totality
+   A real-time composed eclipse. Geometry: two discs of the
+   observed angular sizes (scaled 1.6x for the lens), a lunar
+   limb with relief, a solar photosphere with limb darkening,
+   the corona, and a lake that mirrors all of it.
+   ============================================================ */
+
+const DEG = Math.PI / 180;
+
+/* ---------- eclipse geometry ---------- */
+
+// angular radii, degrees. The Sun is ~0.266 deg; enlarged 1.6x so the
+// corona reads at a 26-degree lens (the proportions are preserved).
+const SUN_R = 0.266 * 1.6;
+const MOON_R = 0.272 * 1.6;
+const IMPACT = 0.0030;          // minimum separation, degrees
+const PATH = 0.32;              // direction of the moon's motion in the sky plane
+const SUN_ALT = 5.5 * DEG;
+const END = 132;
+
+// story time -> signed offset of the moon along its path, degrees.
+// Time is compressed outside the shadow and released inside it.
+const KEYS = [
+  [0,    0.480], [8,   0.452], [16,  0.416], [24,  0.368],
+  [31,   0.308], [37,  0.246], [42,  0.188], [46,  0.138],
+  [49,   0.098], [51,  0.070], [52.5,0.048], [53.6,0.030],
+  [54.4, 0.0180],[55.0,0.0090],[77.0,-0.0090],[77.8,-0.0165],
+  [79,  -0.040], [82,  -0.085], [86, -0.135], [92, -0.200],
+  [100, -0.270], [110, -0.345], [121, -0.414], [132, -0.480]
+];
+
+function moonX(t){
+  t = Math.max(0, Math.min(END, t));
+  for (let i = 0; i < KEYS.length - 1; i++){
+    const [t0, x0] = KEYS[i], [t1, x1] = KEYS[i+1];
+    if (t <= t1){
+      const u = (t - t0) / (t1 - t0);
+      return x0 + (x1 - x0) * u;
+    }
+  }
+  return KEYS[KEYS.length-1][1];
+}
+
+function separation(t){
+  const x = moonX(t);
+  return Math.hypot(x, IMPACT);
+}
+
+function obscuration(d){
+  const r1 = SUN_R, r2 = MOON_R;
+  if (d >= r1 + r2) return 0;
+  if (d <= Math.abs(r1 - r2)) return 1;
+  const a1 = Math.acos((d*d + r1*r1 - r2*r2) / (2*d*r1));
+  const a2 = Math.acos((d*d + r2*r2 - r1*r1) / (2*d*r2));
+  const A = r1*r1*(a1 - Math.sin(2*a1)/2) + r2*r2*(a2 - Math.sin(2*a2)/2);
+  return Math.max(0, Math.min(1, A / (Math.PI*r1*r1)));
+}
+
+// totality interval
+let TOT_START = 0, TOT_END = 0;
+(function(){
+  let inside = false;
+  for (let t = 0; t <= END; t += 0.02){
+    const tot = separation(t) <= (MOON_R - SUN_R);
+    if (tot && !inside){ TOT_START = t; inside = true; }
+    if (!tot && inside){ TOT_END = t; inside = false; }
+  }
+  if (inside) TOT_END = END;
+})();
+
+function stateAt(t){
+  const sep = separation(t);
+  const obsc = obscuration(sep);
+  const light = Math.pow(Math.max(0, 1 - obsc), 0.35);
+  const totality = Math.min(1, Math.max(0, (obsc - 0.990) / 0.0099));
+  const isTotal = t >= TOT_START && t <= TOT_END;
+  return { t, sep, obsc, light, totality, isTotal };
+}
+
+/* ---------- renderer ---------- */
+
+const canvas = document.getElementById('scene');
+const gl = canvas.getContext('webgl2', {
+  antialias: false, alpha: false, depth: false, stencil: false,
+  premultipliedAlpha: false, powerPreference: 'high-performance'
+});
+
+const errEl = document.getElementById('err');
+function fail(msg){
+  errEl.textContent = msg;
+  errEl.classList.add('show');
+  console.error(msg);
+}
+
+const VERT = `#version 300 es
+in vec2 aPos;
+void main(){ gl_Position = vec4(aPos, 0.0, 1.0); }`;
+
+const FRAG = `#version 300 es
+precision highp float;
+
+out vec4 outColor;
+
+uniform vec2  uRes;
+uniform float uTime;
+uniform float uYaw;
+uniform float uPitch;
+uniform float uTanHalfY;
+uniform vec3  uSunDir;
+uniform vec2  uMoonOff;
+uniform float uSunR;
+uniform float uMoonR;
+uniform float uObsc;
+uniform float uLight;
+uniform float uTotality;
+uniform float uPixelAng;
+uniform float uDebug;
+
+const float PI = 3.14159265359;
+const float DEGR = 0.01745329252;
+
+/* ---------- hashes and noise ---------- */
+float hash21(vec2 p){
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+float vnoise(vec2 p){
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f*f*(3.0 - 2.0*f);
+  float a = hash21(i);
+  float b = hash21(i + vec2(1.0, 0.0));
+  float c = hash21(i + vec2(0.0, 1.0));
+  float d = hash21(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+float fbm(vec2 p, int oct){
+  float v = 0.0;
+  float a = 0.5;
+  for (int i = 0; i < 6; i++){
+    if (i >= oct) break;
+    v += a * vnoise(p);
+    p = p * 2.03 + vec2(13.7, 7.9);
+    a *= 0.5;
+  }
+  return v;
+}
+vec3 hash33(vec3 p){
+  p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+  p += dot(p, p.yxz + 33.33);
+  return fract((p.xxy + p.yxx) * p.zyx);
+}
+
+/* ---------- sky ---------- */
+vec3 skyBase(vec3 d){
+  float alt = asin(clamp(d.y, -1.0, 1.0));
+  float az = atan(d.x, -d.z);
+  float toSun = max(dot(d, uSunDir), 0.0);
+  float sunWard = 0.55 + 0.45 * max(cos(az), 0.0);
+
+  float band = exp(-max(alt, 0.0) * 26.0);   // the horizon rim
+  float low  = exp(-max(alt, 0.0) * 8.0);
+
+  // low sun daylight
+  vec3 dayTop = vec3(0.010, 0.034, 0.108);
+  vec3 dayMid = vec3(0.048, 0.108, 0.235);
+  vec3 dayHor = vec3(0.620, 0.300, 0.120);
+  vec3 day = mix(dayTop, dayMid, smoothstep(0.0, 0.22, alt + 0.05));
+  day = mix(day, dayHor, band * 0.85);
+  day += vec3(1.0, 0.50, 0.18) * 0.22 * pow(toSun, 40.0);
+  day += vec3(0.90, 0.42, 0.18) * 0.07 * low * sunWard;
+
+  // the shadow: a deep zenith, a narrow afterglow around the whole horizon
+  vec3 nightTop = vec3(0.0026, 0.0052, 0.0120);
+  vec3 nightMid = vec3(0.0090, 0.0130, 0.0260);
+  vec3 nightHor = vec3(0.3000, 0.1150, 0.0400);
+  vec3 night = mix(nightTop, nightMid, smoothstep(0.0, 0.30, alt + 0.04));
+  night = mix(night, nightHor, pow(band, 1.40));
+  night += vec3(0.42, 0.17, 0.060) * 0.42 * pow(band, 2.2) * sunWard;
+
+  float dayMix = smoothstep(0.035, 0.62, uLight);
+  return mix(night, day, dayMix);
+}
+
+vec3 starField(vec3 d, float night){
+  if (night < 0.002) return vec3(0.0);
+  vec3 p = d * 260.0;
+  vec3 cell = floor(p);
+  vec3 f = fract(p);
+  vec3 h = hash33(cell);
+  vec3 sp = h * 0.86 + 0.07;
+  float dist = length(f - sp);
+  float mag = pow(fract(h.x * 91.7 + h.y * 47.3 + h.z * 13.1), 7.0);
+  float rad = 0.035 + 0.12 * mag;
+  float core = smoothstep(rad, 0.0, dist);
+  float tw = 0.72 + 0.28 * sin(uTime * (1.6 + 4.0 * h.z) + h.x * 91.0);
+  vec3 tint = mix(vec3(0.66, 0.78, 1.0), vec3(1.0, 0.86, 0.70), h.z);
+  return tint * core * (0.04 + 1.8 * mag) * tw * night;
+}
+
+/* ---------- corona and the solar disc ---------- */
+vec3 celestial(vec3 d){
+  vec3 right = normalize(cross(uSunDir, vec3(0.0, 1.0, 0.0)));
+  vec3 upv   = normalize(cross(right, uSunDir));
+  vec2 q  = vec2(dot(d, right), dot(d, upv));
+  vec2 qm = q - uMoonOff;
+
+  float th = atan(qm.y, qm.x);
+  vec2 ring = vec2(cos(th), sin(th));
+  float relief = fbm(ring * 7.0 + 3.7, 3);
+  float limb = uMoonR * (1.0 + 0.050 * (relief - 0.5));
+
+  float dSun  = length(q);
+  float dMoon = length(qm);
+  float aa = max(uPixelAng * 1.2, 1e-7);
+
+  float sunMask  = 1.0 - smoothstep(uSunR - aa, uSunR + aa, dSun);
+  float moonMask = 1.0 - smoothstep(limb - aa, limb + aa, dMoon);
+  float vis = sunMask * (1.0 - moonMask);
+
+  vec3 col = vec3(0.0);
+
+  if (vis > 0.0){
+    float mu = sqrt(max(0.0, 1.0 - (dSun * dSun) / (uSunR * uSunR)));
+    float limbDark = 0.42 + 0.58 * mu;
+    float ext = smoothstep(0.0, 0.22, uSunDir.y);
+    vec3 tint = mix(vec3(1.0, 0.58, 0.28), vec3(1.0, 0.96, 0.90), ext);
+    col += vis * tint * limbDark * 60.0;
+  }
+
+  // optical glare: strongest with the last sliver
+  float visFrac = clamp(1.0 - uObsc, 0.0, 1.0);
+  float gAmt = pow(visFrac, 0.30);
+  float ang = max(dSun, 0.0);
+  float g = exp(-ang / 0.026) * 0.55
+          + exp(-ang / 0.085) * 0.10
+          + exp(-ang / 0.320) * 0.018;
+  col += vec3(1.0, 0.93, 0.82) * g * gAmt * (1.0 - moonMask * 0.97);
+
+  // diamond ring: the last photosphere seen as a point, opposite the moon
+  vec2 cdir = normalize(uMoonOff + vec2(1e-7));
+  float dr = exp(-length(q + cdir * uSunR * 0.98) / (uSunR * 0.16));
+  float dwin = smoothstep(0.975, 0.9994, uObsc) * (1.0 - smoothstep(0.9996, 1.0, uObsc));
+  col += vec3(1.0, 0.96, 0.88) * dr * dwin * 5.0;
+
+  // corona
+  if (uTotality > 0.001 && dMoon > limb * 0.995){
+    float r = dMoon / uMoonR;
+
+    float tw = th + 0.035 * (r - 1.0);
+    vec2 ring2 = vec2(cos(tw), sin(tw));
+
+    float a1 = fbm(ring2 * 1.6 + 4.0, 5);
+    float a2 = fbm(ring2 * 4.0 + 9.0, 4);
+    float a3 = fbm(ring2 * 10.0 + 2.0, 4);
+
+    // streamers of different lengths; the longest carries the composition
+    float streamers = 0.0;
+    streamers += 1.00 * exp(-(1.0 - cos(tw - 0.42)) / (0.011 + 0.007 * r)) * exp(-r / 8.0);
+    streamers += 0.55 * exp(-(1.0 - cos(tw - 2.55)) / (0.012 + 0.009 * r)) * exp(-r / 5.0);
+    streamers += 0.75 * exp(-(1.0 - cos(tw + 1.25)) / (0.013 + 0.009 * r)) * exp(-r / 6.5);
+    streamers += 0.35 * exp(-(1.0 - cos(tw + 2.95)) / (0.011 + 0.008 * r)) * exp(-r / 4.5);
+    streamers += 0.05 * pow(abs(cos(tw)), 2.0);
+
+    float knots = 0.65 + 0.60 * fbm(ring2 * 3.0 + log(r) * 2.0 + 7.0, 3);
+    float streamerMask = min(streamers * (0.65 + 0.50 * a1) * knots, 1.3);
+    float filaments = 0.55 + 0.90 * pow(a3, 1.5);
+
+    float inner   = exp(-max(r - 1.0, 0.0) * 1.55) * 0.60;
+    float diffuse = 0.26 * pow(r, -1.90) * exp(-r * 0.110);
+    float halo    = 0.10 * pow(r, -1.10) * exp(-r * 0.060);
+    float longR   = 0.42 * pow(r, -1.05);
+
+    float I = inner * (0.85 + 0.25 * a2)
+            + diffuse * (0.60 + 0.50 * a1)
+            + 0.50 * halo;
+    I += 2.60 * longR * streamerMask * filaments;
+    I *= 0.78 + 0.26 * abs(sin(th));
+
+    vec3 corCol = mix(vec3(1.0, 0.965, 0.90), vec3(0.58, 0.70, 1.0), smoothstep(1.0, 7.0, r));
+    col += corCol * I * uTotality * 2.0;
+
+    // chromosphere and prominences
+    float chr = exp(-max(dMoon - limb, 0.0) / (uMoonR * 0.010));
+    col += vec3(1.0, 0.22, 0.10) * chr * 1.8 * uTotality;
+
+    float pr = fbm(ring * 4.0 + 8.0, 3);
+    float prom = smoothstep(0.58, 0.78, pr)
+               * exp(-max(r - 1.0, 0.0) * 3.0)
+               * smoothstep(3.0, 1.25, r);
+    col += vec3(0.95, 0.16, 0.06) * prom * 1.7 * uTotality;
+  }
+
+  return col;
+}
+
+/* ---------- land ---------- */
+void ridges(float az, out float hNear, out float hFar){
+  vec2 p = vec2(cos(az), sin(az));
+  float valley  = mix(0.14, 1.0, smoothstep(0.02, 0.30, abs(az)));
+  float valley2 = mix(0.10, 1.0, smoothstep(0.02, 0.18, abs(az)));
+  float r1 = 1.0 - abs(2.0 * fbm(p * 3.2 + 17.0, 4) - 1.0);
+  float r2 = 1.0 - abs(2.0 * fbm(p * 9.0 + 41.0, 4) - 1.0);
+  float r3 = 1.0 - abs(2.0 * fbm(p * 27.0 + 7.0, 3) - 1.0);
+  float fine  = fbm(p * 70.0 + 3.0, 3);
+  float grain = fbm(p * 160.0 + 5.0, 2);
+  hFar  = (0.9 + 3.8 * pow(r1, 1.6) + 1.4 * pow(r2, 1.8) + 0.45 * pow(r3, 2.0) + 0.18 * fine) * valley;
+  hNear = (0.30 + 1.7 * pow(r2, 2.0) + 0.70 * pow(r3, 2.2) + 0.22 * fine + 0.10 * grain) * valley2;
+}
+
+vec3 landColor(vec3 d, float alt, float edge, int layer){
+  float haze = exp(-max(alt, 0.0) * 26.0);
+  vec3 nightCol = layer == 0 ? vec3(0.0016, 0.0020, 0.0034) : vec3(0.0055, 0.0060, 0.0090);
+  vec3 dayCol   = layer == 0 ? vec3(0.0050, 0.0060, 0.0075) : vec3(0.0170, 0.0195, 0.0245);
+  vec3 c = mix(nightCol, dayCol, smoothstep(0.05, 0.7, uLight));
+  vec3 glow = mix(vec3(0.30, 0.115, 0.045), vec3(0.90, 0.52, 0.30), uLight);
+  c += glow * 0.035 * haze;
+  return c;
+}
+
+vec3 world(vec3 d, float pixAng){
+  vec3 col = skyBase(d);
+
+  float night = 1.0 - smoothstep(0.03, 0.14, uLight);
+  float sunAng = acos(clamp(dot(d, uSunDir), -1.0, 1.0));
+  col += starField(d, night) * smoothstep(0.010, 0.10, sunAng);
+
+  // a bright planet, visible only inside the shadow
+  {
+    vec3 venus = normalize(vec3(-0.285, 0.225, -0.931));
+    float vd = acos(clamp(dot(d, venus), -1.0, 1.0));
+    col += vec3(1.0, 0.96, 0.88) * exp(-pow(vd / 0.0022, 2.0)) * 2.4 * night;
+    col += vec3(1.0, 0.90, 0.78) * exp(-vd / 0.008) * 0.10 * night;
+  }
+
+  // a faint galactic band, only inside the shadow
+  if (night > 0.01){
+    float mw = exp(-pow(dot(d, normalize(vec3(0.42, 0.36, -0.83))) * 2.4, 2.0));
+    float mwn = fbm(vec2(d.x * 7.0 + d.z * 3.5, d.y * 7.0) + 21.0, 4);
+    col += vec3(0.085, 0.10, 0.135) * mw * (0.25 + 0.75 * mwn) * night * 0.5;
+  }
+
+  // the moon is a body in front of the sky: it occludes it
+  {
+    vec3 right = normalize(cross(uSunDir, vec3(0.0, 1.0, 0.0)));
+    vec3 upv   = normalize(cross(right, uSunDir));
+    vec2 q  = vec2(dot(d, right), dot(d, upv));
+    vec2 qm = q - uMoonOff;
+    float thm = atan(qm.y, qm.x);
+    vec2 ringm = vec2(cos(thm), sin(thm));
+    float relief = fbm(ringm * 7.0 + 3.7, 3);
+    float limb = uMoonR * (1.0 + 0.050 * (relief - 0.5));
+    float aa2 = max(pixAng * 1.2, 1e-7);
+    float mm = 1.0 - smoothstep(limb - aa2, limb + aa2, length(qm));
+    col *= 1.0 - mm;
+  }
+
+  col += celestial(d);
+
+  float alt = asin(clamp(d.y, -1.0, 1.0));
+  float az = atan(d.x, -d.z);
+  float hNear, hFar;
+  ridges(az, hNear, hFar);
+  hNear *= 0.01745329;
+  hFar  *= 0.01745329;
+
+  float aa = max(pixAng * 1.2, 1e-6);
+  vec3 rimCol = mix(vec3(0.30, 0.10, 0.035), vec3(0.85, 0.45, 0.22), uLight);
+  if (alt < hFar + aa){
+    float e = smoothstep(hFar + aa, hFar - aa, alt);
+    vec3 c = landColor(d, alt, hFar, 1);
+    col = mix(col, c, e);
+    // a faint rim where the ridge meets the afterglow
+    float rim = exp(-abs(alt - hFar) / 0.0012);
+    col += rimCol * rim * 0.022;
+    if (alt < hNear + aa){
+      float e2 = smoothstep(hNear + aa, hNear - aa, alt);
+      vec3 c2 = landColor(d, alt, hNear, 0);
+      col = mix(col, c2, e2);
+      float rim2 = exp(-abs(alt - hNear) / 0.0009);
+      col += rimCol * rim2 * 0.020;
+      // distant haze at the waterline
+      float mist = exp(-max(alt, 0.0) * 62.0) * e2;
+      vec3 mc = mix(vec3(0.020, 0.012, 0.010), vec3(0.22, 0.16, 0.12), uLight);
+      col = mix(col, mc, mist * 0.26);
+    }
+  }
+
+  return col;
+}
+
+/* ---------- water ---------- */
+vec3 water(vec3 rd, float pixAng){
+  float az = atan(rd.x, -rd.z);
+  float n1 = fbm(vec2(az * 11.0, uTime * 0.11) + 3.0, 3);
+  float n2 = fbm(vec2(az * 29.0 + 8.0, uTime * 0.17), 3);
+  float n3 = fbm(vec2(az * 63.0 + 2.0, uTime * 0.26), 2);
+  vec2 rip = vec2((n1 - 0.5) * 0.0032 + (n2 - 0.5) * 0.0014 + (n3 - 0.5) * 0.0006,
+                  (n2 - 0.5) * 0.0021 + (n3 - 0.5) * 0.0009);
+
+  vec3 refl = normalize(vec3(rd.x + rip.x, -rd.y, rd.z + rip.y));
+  vec3 sky = world(refl, pixAng) * 0.88;
+
+  float cosT = clamp(-rd.y, 0.0, 1.0);
+  float F = 0.020 + 0.980 * pow(1.0 - cosT, 5.0);
+  vec3 body = vec3(0.0025, 0.0038, 0.0062);
+
+  vec3 col = mix(body, sky, F);
+  // the surface itself: a slow, dark swell
+  float swell = 0.92 + 0.08 * n1;
+  col *= swell;
+
+  // near-shore darkening at the bottom of the frame
+  col *= mix(0.55, 1.0, smoothstep(0.0, 0.35, cosT) * 0.5 + 0.5);
+  return col;
+}
+
+/* ---------- post ---------- */
+vec3 aces(vec3 x){
+  return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+}
+
+void main(){
+  vec2 uv = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y * 2.0;
+
+  vec3 fwd   = vec3(sin(uYaw) * cos(uPitch), sin(uPitch), -cos(uYaw) * cos(uPitch));
+  vec3 right = vec3(cos(uYaw), 0.0, sin(uYaw));
+  vec3 upv   = cross(right, fwd);
+  vec3 rd = normalize(fwd + right * (uv.x * uTanHalfY) + upv * (uv.y * uTanHalfY));
+
+  float pixAng = 2.0 * uTanHalfY / uRes.y;
+
+  vec3 col;
+  if (rd.y >= 0.0){
+    col = world(rd, pixAng);
+  } else {
+    col = water(rd, pixAng);
+  }
+
+  col = aces(col * 1.05);
+  col = pow(col, vec3(1.0 / 2.2));
+
+  // grade: cool the shadows, keep the highlights warm
+  float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
+  col = mix(col, col * vec3(0.93, 0.99, 1.09), (1.0 - l) * 0.30);
+
+  // dither
+  col += (hash21(gl_FragCoord.xy + fract(uTime * 0.37) * 91.0) - 0.5) * 0.0045;
+
+  if (uDebug > 0.5){
+    float alt = asin(clamp(rd.y, -1.0, 1.0)) / DEGR;
+    float az = atan(rd.x, -rd.z) / DEGR;
+    if (abs(fract(alt) - 0.5) > 0.475) col = mix(col, vec3(0.5), 0.35);
+    if (abs(fract(az / 5.0) - 0.5) > 0.485) col = mix(col, vec3(0.5), 0.25);
+    if (abs(alt) < 0.10) col = vec3(1.0, 0.0, 0.0);
+    if (abs(alt - 5.5) < 0.10) col = vec3(0.0, 1.0, 0.0);
+    if (abs(alt - 13.0) < 0.10) col = vec3(0.3, 0.5, 1.0);
+    if (dot(rd, uSunDir) > 0.99997) col = vec3(1.0);
+  }
+
+  outColor = vec4(col, 1.0);
+}`;
+
+function compile(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)){
+    const log = gl.getShaderInfoLog(s);
+    fail('Shader error:\n' + log);
+    throw new Error(log);
+  }
+  return s;
+}
+
+let prog = null, uniforms = {}, vao = null;
+let renderScale = 1;
+
+function initGL(){
+  if (!gl){ fail('This work needs WebGL2. Chrome or Firefox with hardware acceleration will run it.'); return false; }
+  const vs = compile(gl.VERTEX_SHADER, VERT);
+  const fs = compile(gl.FRAGMENT_SHADER, FRAG);
+  prog = gl.createProgram();
+  gl.attachShader(prog, vs);
+  gl.attachShader(prog, fs);
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)){
+    fail('Link error:\n' + gl.getProgramInfoLog(prog));
+    return false;
+  }
+  gl.useProgram(prog);
+
+  const names = ['uRes','uTime','uYaw','uPitch','uTanHalfY','uSunDir','uMoonOff',
+                 'uSunR','uMoonR','uObsc','uLight','uTotality','uPixelAng','uDebug'];
+  for (const n of names) uniforms[n] = gl.getUniformLocation(prog, n);
+
+  vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(prog, 'aPos');
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+
+  gl.disable(gl.DEPTH_TEST);
+  gl.disable(gl.BLEND);
+  return true;
+}
+
+const sunDir = [0, Math.sin(SUN_ALT), -Math.cos(SUN_ALT)];
+
+function resize(){
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.75) * renderScale;
+  const w = Math.max(1, Math.floor(window.innerWidth * dpr));
+  const h = Math.max(1, Math.floor(window.innerHeight * dpr));
+  if (canvas.width !== w || canvas.height !== h){
+    canvas.width = w;
+    canvas.height = h;
+    if (gl) gl.viewport(0, 0, w, h);
+  }
+}
+
+/* ---------- interaction ---------- */
+
+const cam = { yaw: 0, pitch: 0, tyaw: 0, tpitch: 0 };
+let t = 0;
+let playing = false;
+let started = false;
+let startedAt = 0;
+let lastFrame = performance.now();
+let lastPointer = performance.now();
+let dragging = false;
+let dragLast = { x: 0, y: 0 };
+let seeking = false;
+
+function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+
+function begin(){
+  if (started) return;
+  started = true;
+  playing = true;
+  t = 0;
+  document.body.classList.add('started');
+  lastPointer = performance.now();
+  audio.init();
+  setTimeout(() => { document.body.classList.remove('idle'); }, 100);
+}
+
+document.getElementById('begin').addEventListener('click', begin);
+document.getElementById('again').addEventListener('click', () => {
+  document.body.classList.remove('ended');
+  t = 0;
+  playing = true;
+  audio.rewind();
+});
+
+canvas.addEventListener('pointerdown', e => {
+  if (!started) return;
+  dragging = true;
+  try { canvas.setPointerCapture(e.pointerId); } catch(_){}
+  dragLast = { x: e.clientX, y: e.clientY };
+  wake();
+});
+canvas.addEventListener('pointermove', e => {
+  if (!dragging) return;
+  const dx = e.clientX - dragLast.x;
+  const dy = e.clientY - dragLast.y;
+  dragLast = { x: e.clientX, y: e.clientY };
+  cam.tyaw -= dx * 0.0026;
+  cam.tpitch = clamp(cam.tpitch + dy * 0.0022, -0.55, 0.62);
+  wake();
+});
+canvas.addEventListener('pointerup', e => {
+  dragging = false;
+  try { canvas.releasePointerCapture(e.pointerId); } catch(_){}
+});
+canvas.addEventListener('pointercancel', () => { dragging = false; });
+
+window.addEventListener('wheel', e => {
+  if (!started) return;
+  e.preventDefault();
+  t = clamp(t + e.deltaY * 0.030, 0, END);
+  document.body.classList.remove('ended');
+  wake();
+}, { passive: false });
+
+window.addEventListener('keydown', e => {
+  if (e.key === ' '){
+    if (!started){ begin(); return; }
+    e.preventDefault();
+    playing = !playing;
+    wake();
+  } else if (e.key === 'h' || e.key === 'H'){
+    document.body.classList.toggle('hidden');
+  } else if (e.key === 'r' || e.key === 'R'){
+    if (!started) begin();
+    t = 0; playing = true; document.body.classList.remove('ended'); audio.rewind();
+  } else if (e.key === 'f' || e.key === 'F'){
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+    else document.exitFullscreen?.();
+  } else if (e.key === 'ArrowRight'){
+    t = clamp(t + 2, 0, END); wake();
+  } else if (e.key === 'ArrowLeft'){
+    t = clamp(t - 2, 0, END); wake();
+  }
+});
+
+function wake(){
+  lastPointer = performance.now();
+  document.body.classList.remove('idle');
+}
+
+window.addEventListener('pointermove', e => {
+  if (e.pointerType === 'mouse') wake();
+});
+
+/* rail */
+const rail = document.getElementById('rail');
+const railFill = document.getElementById('fill');
+const railKnob = document.getElementById('knob');
+
+function buildRail(){
+  const track = document.getElementById('track');
+  const marks = [
+    { t: TOT_START, label: 'II' },
+    { t: TOT_END,   label: 'III' }
+  ];
+  for (const m of marks){
+    const x = (m.t / END) * 100;
+    const tick = document.createElement('div');
+    tick.className = 'tick';
+    tick.style.left = x + '%';
+    rail.appendChild(tick);
+    const lab = document.createElement('div');
+    lab.className = 'tlabel';
+    lab.style.left = x + '%';
+    lab.textContent = m.label;
+    rail.appendChild(lab);
+  }
+}
+
+function railSeek(clientX){
+  const r = rail.getBoundingClientRect();
+  const u = clamp((clientX - r.left) / r.width, 0, 1);
+  t = u * END;
+  document.body.classList.remove('ended');
+}
+
+rail.addEventListener('pointerdown', e => {
+  if (!started) return;
+  seeking = true;
+  try { rail.setPointerCapture(e.pointerId); } catch(_){}
+  railSeek(e.clientX);
+  wake();
+});
+rail.addEventListener('pointermove', e => {
+  if (seeking) railSeek(e.clientX);
+});
+rail.addEventListener('pointerup', e => {
+  seeking = false;
+  try { rail.releasePointerCapture(e.pointerId); } catch(_){}
+});
+
+/* ---------- audio ---------- */
+
+const audio = {
+  ctx: null, master: null, ready: false,
+  wind: null, windGain: null, gustGain: null, bedGain: null,
+  drone: null, droneGain: null, shimmer: null, shimmerGain: null,
+  nextChirp: 0, lastUpdate: 0,
+
+  init(){
+    if (this.ctx) { this.ctx.resume(); return; }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    const ctx = new AC();
+    this.ctx = ctx;
+
+    const master = ctx.createGain();
+    master.gain.value = 0.0001;
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -18;
+    comp.knee.value = 24;
+    comp.ratio.value = 3;
+    comp.attack.value = 0.02;
+    comp.release.value = 0.6;
+    master.connect(comp);
+    comp.connect(ctx.destination);
+    this.master = master;
+
+    // brown-ish noise buffer
+    const len = ctx.sampleRate * 6;
+    const buf = ctx.createBuffer(2, len, ctx.sampleRate);
+    for (let ch = 0; ch < 2; ch++){
+      const d = buf.getChannelData(ch);
+      let last = 0;
+      for (let i = 0; i < len; i++){
+        const w = Math.random() * 2 - 1;
+        last = 0.985 * last + 0.015 * w;
+        d[i] = last * 9.0;
+      }
+    }
+
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 620;
+    bp.Q.value = 0.55;
+    const windGain = ctx.createGain();
+    windGain.gain.value = 0.0001;
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = -0.15;
+
+    src.connect(bp); bp.connect(windGain); windGain.connect(pan); pan.connect(master);
+
+    const src2 = ctx.createBufferSource();
+    src2.buffer = buf; src2.loop = true;
+    const bp2 = ctx.createBiquadFilter();
+    bp2.type = 'bandpass'; bp2.frequency.value = 1650; bp2.Q.value = 0.9;
+    const gustGain = ctx.createGain(); gustGain.gain.value = 0.0001;
+    const pan2 = ctx.createStereoPanner(); pan2.pan.value = 0.2;
+    src2.connect(bp2); bp2.connect(gustGain); gustGain.connect(pan2); pan2.connect(master);
+
+    const bedFilter = ctx.createBiquadFilter();
+    bedFilter.type = 'lowpass'; bedFilter.frequency.value = 130;
+    const bedGain = ctx.createGain(); bedGain.gain.value = 0.0001;
+    src.connect(bedFilter); bedFilter.connect(bedGain); bedGain.connect(master);
+
+    // drone
+    const droneGain = ctx.createGain();
+    droneGain.gain.value = 0.0001;
+    const dLow = ctx.createBiquadFilter();
+    dLow.type = 'lowpass'; dLow.frequency.value = 260; dLow.Q.value = 0.4;
+    droneGain.connect(dLow); dLow.connect(master);
+    const freqs = [55, 55.35, 82.5, 110.2, 164.8];
+    for (const f of freqs){
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = f;
+      const g = ctx.createGain();
+      g.gain.value = f < 100 ? 0.36 : 0.10;
+      o.connect(g); g.connect(droneGain);
+      o.start();
+    }
+
+    // shimmer of the corona
+    const shimmerGain = ctx.createGain();
+    shimmerGain.gain.value = 0.0001;
+    const sLow = ctx.createBiquadFilter();
+    sLow.type = 'lowpass'; sLow.frequency.value = 4200;
+    shimmerGain.connect(sLow); sLow.connect(master);
+    const sf = [1046.5, 1568.0, 2093.0, 2637.0, 3136.0];
+    sf.forEach((f, i) => {
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = f;
+      const g = ctx.createGain();
+      g.gain.value = 0.05 + 0.05 * Math.sin(i * 2.1);
+      const lfo = ctx.createOscillator();
+      lfo.type = 'sine';
+      lfo.frequency.value = 0.08 + i * 0.031;
+      const lg = ctx.createGain();
+      lg.gain.value = 0.035;
+      lfo.connect(lg); lg.connect(g.gain);
+      o.connect(g); g.connect(shimmerGain);
+      o.start(); lfo.start();
+    });
+
+    src.start(); src2.start();
+
+    this.windGain = windGain;
+    this.gustGain = gustGain;
+    this.bedGain = bedGain;
+    this.droneGain = droneGain;
+    this.shimmerGain = shimmerGain;
+
+    master.gain.setTargetAtTime(0.9, ctx.currentTime, 1.4);
+    this.ready = true;
+    this.nextChirp = ctx.currentTime + 1.0;
+  },
+
+  update(st){
+    if (!this.ready) return;
+    const now = this.ctx.currentTime;
+    if (now - this.lastUpdate > 0.1){
+      this.lastUpdate = now;
+      const light = st.light;
+      const tot = st.totality;
+
+      this.windGain.gain.setTargetAtTime(0.0001 + 0.16 * light + 0.02, now, 0.5);
+      this.gustGain.gain.setTargetAtTime(0.0001 + 0.05 * light * (0.3 + 0.7 * Math.abs(Math.sin(now * 0.13))), now, 0.6);
+      this.bedGain.gain.setTargetAtTime(0.0001 + 0.05 * (0.25 + 0.75 * light), now, 0.7);
+
+      const droneAmt = 0.03 + 0.13 * Math.pow(1.0 - light, 1.4) + 0.05 * tot;
+      this.droneGain.gain.setTargetAtTime(droneAmt, now, 0.8);
+
+      this.shimmerGain.gain.setTargetAtTime(0.0001 + 0.085 * tot, now, 0.9);
+
+      if (tot > 0.55 && now > this.nextChirp){
+        this.chirp();
+        this.nextChirp = now + 0.55 + Math.random() * 1.5;
+      }
+    }
+  },
+
+  chirp(){
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = Math.random() * 1.4 - 0.7;
+    pan.connect(this.master);
+    const pulses = 3 + Math.floor(Math.random() * 4);
+    const base = 3900 + Math.random() * 500;
+    for (let i = 0; i < pulses; i++){
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = base;
+      const g = ctx.createGain();
+      const t0 = now + i * 0.038;
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.linearRampToValueAtTime(0.010, t0 + 0.006);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.028);
+      o.connect(g); g.connect(pan);
+      o.start(t0); o.stop(t0 + 0.04);
+    }
+  },
+
+  rewind(){
+    if (!this.ready) return;
+    this.nextChirp = this.ctx.currentTime + 1.0;
+  }
+};
+
+/* ---------- hud ---------- */
+
+const phaseEl = document.getElementById('phase');
+const clockEl = document.getElementById('clock');
+const subEl = document.getElementById('sub');
+const fillEl = document.getElementById('obscfill');
+const obscbar = document.getElementById('obscbar');
+
+function fmt(s){
+  s = Math.max(0, Math.ceil(s));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return String(m).padStart(2, '0') + ':' + String(r).padStart(2, '0');
+}
+
+let hudAt = 0;
+function updateHud(st){
+  const now = performance.now();
+  if (now - hudAt < 80) return;
+  hudAt = now;
+
+  railFill.style.width = (st.t / END * 100) + '%';
+  railKnob.style.left = (st.t / END * 100) + '%';
+  rail.setAttribute('aria-valuenow', st.t.toFixed(1));
+  fillEl.style.width = (st.obsc * 100).toFixed(2) + '%';
+
+  if (st.t < TOT_START - 0.8){
+    phaseEl.textContent = 'partial eclipse';
+    phaseEl.classList.remove('total');
+    clockEl.textContent = fmt(TOT_START - st.t);
+    subEl.textContent = 'to second contact';
+  } else if (st.t < TOT_START){
+    phaseEl.textContent = 'second contact';
+    phaseEl.classList.add('total');
+    clockEl.textContent = fmt(TOT_START - st.t);
+    subEl.textContent = 'the last sliver';
+  } else if (st.t <= TOT_END){
+    phaseEl.textContent = 'totality';
+    phaseEl.classList.add('total');
+    clockEl.textContent = fmt(TOT_END - st.t);
+    subEl.textContent = 'of the corona';
+  } else if (st.t < TOT_END + 1.2){
+    phaseEl.textContent = 'third contact';
+    phaseEl.classList.remove('total');
+    clockEl.textContent = fmt(st.t - TOT_END);
+    subEl.textContent = 'the diamond ring';
+  } else {
+    phaseEl.textContent = 'partial eclipse';
+    phaseEl.classList.remove('total');
+    clockEl.textContent = fmt(END - st.t);
+    subEl.textContent = 'to last contact';
+  }
+
+  if (st.obsc > 0.5) obscbar.style.opacity = '1';
+}
+
+/* ---------- loop ---------- */
+
+let elapsed = 0;
+let debugMode = new URLSearchParams(location.search).has('debug');
+let fpsAccum = 0, fpsCount = 0, fpsCheck = 0, degraded = 0;
+
+function frame(now){
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.05, (now - lastFrame) / 1000);
+  lastFrame = now;
+  elapsed += dt;
+
+  if (started && playing){
+    t += dt;
+    if (t >= END){
+      t = END;
+      playing = false;
+      document.body.classList.add('ended');
+    }
+  }
+
+  // camera easing
+  cam.yaw += (cam.tyaw - cam.yaw) * Math.min(1, dt * 9);
+  cam.pitch += (cam.tpitch - cam.pitch) * Math.min(1, dt * 9);
+
+  const st = stateAt(t);
+
+  // cinematic push-in while the corona is on
+  const fovY = (26.0 - 1.7 * st.totality) * DEG;
+  const tanHalfY = Math.tan(fovY / 2);
+
+  resize();
+
+  gl.useProgram(prog);
+  gl.uniform2f(uniforms.uRes, canvas.width, canvas.height);
+  gl.uniform1f(uniforms.uTime, elapsed);
+  gl.uniform1f(uniforms.uYaw, cam.yaw);
+  gl.uniform1f(uniforms.uPitch, cam.pitch);
+  gl.uniform1f(uniforms.uTanHalfY, tanHalfY);
+  gl.uniform3f(uniforms.uSunDir, sunDir[0], sunDir[1], sunDir[2]);
+  const r = moonX(t) * DEG;
+  gl.uniform2f(uniforms.uMoonOff, Math.cos(PATH) * r, Math.sin(PATH) * r);
+  gl.uniform1f(uniforms.uSunR, SUN_R * DEG);
+  gl.uniform1f(uniforms.uMoonR, MOON_R * DEG);
+  gl.uniform1f(uniforms.uObsc, st.obsc);
+  gl.uniform1f(uniforms.uLight, st.light);
+  gl.uniform1f(uniforms.uTotality, st.totality);
+  gl.uniform1f(uniforms.uPixelAng, 2 * tanHalfY / canvas.height);
+  gl.uniform1f(uniforms.uDebug, debugMode ? 1 : 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  if (started) updateHud(st);
+  if (started && audio.ready) audio.update(st);
+
+  // adaptive resolution
+  fpsAccum += dt; fpsCount++;
+  if (now - fpsCheck > 2500){
+    const avg = fpsAccum / fpsCount;
+    if (avg > 0.040 && degraded < 3){
+      degraded++;
+      renderScale = degraded === 1 ? 0.78 : degraded === 2 ? 0.62 : 0.5;
+      canvas.width = 0;
+    }
+    fpsAccum = 0; fpsCount = 0; fpsCheck = now;
+  }
+
+  // idle hud
+  if (started && now - lastPointer > 5000 && !document.body.classList.contains('idle')){
+    document.body.classList.add('idle');
+  }
+}
+
+/* ---------- boot ---------- */
+
+buildRail();
+if (initGL()){
+  resize();
+  requestAnimationFrame(frame);
+}
+
+/* test hooks */
+window.__totality = {
+  seek(v){ t = clamp(v, 0, END); },
+  look(y, p){ cam.tyaw = y; cam.tpitch = p; cam.yaw = y; cam.pitch = p; },
+  state(){ return stateAt(t); },
+  cam,
+  audio,
+  get time(){ return t; },
+  set playing(v){ playing = v; },
+  get playing(){ return playing; },
+  begin
+};
+</script>
+</body>
+</html>
