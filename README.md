@@ -25,9 +25,9 @@ each entry links to its own page.
 
 | Model | Work | Description |
 | --- | --- | --- |
-| `DeepSeek-V4.1-Flash-1017` | `harmonia` | A heliocentric instrument. Computes real planetary positions from JPL approximate Keplerian elements and sonifies their motion with browser-synthesised audio. See its own `README.md` for controls and model notes. |
-| `GLM-5.3-Flash-FP4-Local` | `abyss-cathedral` | "The Drowned Cathedral" — a WebGL2 scene; move the pointer to look around, click to enable sound, scroll to drift. |
-| `GLM-5.3-Flash-FP4-Local` | `ink-cosmos` | "墨の宇宙 / Ink Cosmos" — an interactive ink-wash cosmos that morphs on click and on pointer movement. |
+| `DeepSeek-V4.1-Flash-1017` | [Harmonia](https://making.github.io/wow-works/DeepSeek-V4.1-Flash-1017/harmonia/) (`harmonia`) | A heliocentric instrument. Computes real planetary positions from JPL approximate Keplerian elements and sonifies their motion with browser-synthesised audio. See its own `README.md` for controls and model notes. |
+| `GLM-5.3-Flash-FP4-Local` | [The Drowned Cathedral](https://making.github.io/wow-works/GLM-5.3-Flash-FP4-Local/abyss-cathedral/) (`abyss-cathedral`) | A WebGL2 scene; move the pointer to look around, click to enable sound, scroll to drift. |
+| `GLM-5.3-Flash-FP4-Local` | [墨の宇宙 / Ink Cosmos](https://making.github.io/wow-works/GLM-5.3-Flash-FP4-Local/ink-cosmos/) (`ink-cosmos`) | An interactive ink-wash cosmos that morphs on click and on pointer movement. |
 
 ## Running
 
