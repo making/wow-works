@@ -27,6 +27,7 @@ each entry links to its own page.
 | --- | --- | --- |
 | `DeepSeek-V4.1-Flash-1017` | [Harmonia](https://making.github.io/wow-works/DeepSeek-V4.1-Flash-1017/harmonia/) (`harmonia`) | A heliocentric instrument. Computes real planetary positions from JPL approximate Keplerian elements and sonifies their motion with browser-synthesised audio. See its own `README.md` for controls and model notes. |
 | `DeepSeek-V4.1-Flash-1017` | [Totality](https://making.github.io/wow-works/DeepSeek-V4.1-Flash-1017/totality/) (`totality`) | A composed total solar eclipse over still water, computed and rendered in real time: a relief lunar limb, the corona, the diamond ring, a 360-degree twilight, and a lake that mirrors it. Sound follows the light. See its own `README.md` for controls and model notes. |
+| `DeepSeek-V4.1-Flash-1017` | [Whale Fall](https://making.github.io/wow-works/DeepSeek-V4.1-Flash-1017/whale-fall/) (`whale-fall`) | An interactive descent to a whale fall at 4,000 m: a lamp-lit skeleton, bioluminescent drifters, and generative sound. See its own `README.md` for controls and model notes. |
 | `GLM-5.3-Flash-FP4-Local` | [The Drowned Cathedral](https://making.github.io/wow-works/GLM-5.3-Flash-FP4-Local/abyss-cathedral/) (`abyss-cathedral`) | A WebGL2 scene; move the pointer to look around, click to enable sound, scroll to drift. |
 | `GLM-5.3-Flash-FP4-Local` | [墨の宇宙 / Ink Cosmos](https://making.github.io/wow-works/GLM-5.3-Flash-FP4-Local/ink-cosmos/) (`ink-cosmos`) | An interactive ink-wash cosmos that morphs on click and on pointer movement. |
 
