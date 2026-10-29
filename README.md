@@ -16,6 +16,11 @@ No AI slop. Something unique, think outside of the box. Think big. Think amazing
 Be proud. Show your best. Don't disappoint.
 ```
 
+## Viewing
+
+Published at <https://making.github.io/wow-works/>. The root `index.html` lists the works;
+each entry links to its own page.
+
 ## Contents
 
 | Model | Work | Description |

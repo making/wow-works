@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>wow works</title>
+<meta name="description" content="Three browser works made from one prompt, filed as they were generated.">
+<style>
+  :root{
+    --field:#080c10;
+    --paper:#e6e1d5;
+    --muted:#8a949c;
+    --rule:rgba(230,225,213,.16);
+    --rule-strong:rgba(230,225,213,.34);
+    --focus:#9dbcb6;
+    --display:"Didot","Bodoni 72","Hoefler Text","Baskerville",Georgia,serif;
+    --text:"Hoefler Text","Iowan Old Style",Palatino,"Book Antiqua",Georgia,serif;
+    --meta:"Helvetica Neue",Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--field);color:var(--paper)}
+  body{font-family:var(--text);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  .page{max-width:1180px;margin:0 auto;padding:clamp(1.5rem,5vw,4.5rem) clamp(1.25rem,5vw,4.5rem) clamp(2rem,6vw,5rem)}
+
+  header{max-width:46ch}
+  h1{
+    font-family:var(--display);
+    font-weight:400;
+    font-size:clamp(2.9rem,8.5vw,6.6rem);
+    line-height:.94;
+    letter-spacing:-.015em;
+    margin:0 0 1.1rem;
+  }
+  .lead{
+    margin:0;
+    font-size:clamp(1rem,1.35vw,1.18rem);
+    line-height:1.65;
+    color:var(--paper);
+  }
+  .lead em{font-style:italic}
+  .lead span{color:var(--muted)}
+
+  ol.works{list-style:none;margin:clamp(2.2rem,6vw,4.5rem) 0 0;padding:0;border-bottom:1px solid var(--rule)}
+  ol.works li{border-top:1px solid var(--rule)}
+  .work a{
+    display:grid;
+    grid-template-columns:clamp(2.6rem,6vw,5rem) minmax(0,1fr);
+    align-items:baseline;
+    gap:clamp(.6rem,2vw,1.6rem);
+    padding:clamp(1.15rem,3.2vw,2.4rem) clamp(.2rem,1vw,.6rem);
+    color:inherit;
+    text-decoration:none;
+    position:relative;
+    transition:background-color 260ms ease;
+  }
+  .work a::before{
+    content:"";
+    position:absolute;
+    inset:0 -.4rem;
+    border-left:2px solid transparent;
+    transition:border-color 260ms ease;
+    pointer-events:none;
+  }
+  .work a:hover{background:rgba(230,225,213,.025)}
+  .work a:hover::before,.work a:focus-visible::before{border-left-color:var(--mark)}
+  .work a:focus-visible{outline:1px solid var(--focus);outline-offset:-1px}
+
+  .numeral{
+    font-family:var(--display);
+    font-size:clamp(1rem,1.8vw,1.35rem);
+    font-variant-numeric:lining-nums;
+    letter-spacing:.12em;
+    color:var(--mark);
+    line-height:1;
+  }
+  .name{
+    display:block;
+    font-family:var(--display);
+    font-weight:400;
+    font-size:clamp(1.55rem,4.2vw,2.9rem);
+    line-height:1.08;
+    letter-spacing:-.01em;
+  }
+  .model{
+    display:block;
+    margin-top:.55rem;
+    font-family:var(--meta);
+    font-size:.78rem;
+    letter-spacing:.06em;
+    color:var(--muted);
+  }
+  .desc{
+    display:block;
+    max-width:58ch;
+    margin-top:.7rem;
+    font-size:clamp(.95rem,1.2vw,1.05rem);
+    line-height:1.6;
+    color:#cfcabd;
+    opacity:.6;
+    transition:opacity 320ms ease;
+  }
+  .work a:hover .desc,.work a:focus-visible .desc{opacity:1}
+
+  footer{
+    margin-top:clamp(2.5rem,6vw,4.5rem);
+    max-width:64ch;
+    color:var(--muted);
+    font-size:.95rem;
+    line-height:1.7;
+  }
+  footer a{color:var(--paper);text-decoration:none;border-bottom:1px solid var(--rule-strong)}
+  footer a:hover,footer a:focus-visible{border-bottom-color:var(--focus)}
+  footer a:focus-visible{outline:1px solid var(--focus);outline-offset:3px}
+  details{margin-top:1.4rem;border-top:1px solid var(--rule);padding-top:1rem}
+  summary{cursor:pointer;font-family:var(--meta);font-size:.8rem;letter-spacing:.05em;color:#b6b1a4}
+  summary:focus-visible{outline:1px solid var(--focus);outline-offset:3px}
+  blockquote{
+    margin:1rem 0 0;
+    padding-left:1rem;
+    border-left:1px solid var(--rule);
+    font-style:italic;
+    white-space:pre-line;
+    color:#b9b4a7;
+  }
+  .fine{margin-top:1.6rem;font-family:var(--meta);font-size:.76rem;letter-spacing:.04em;color:#6f7a82}
+
+  @media (prefers-reduced-motion:reduce){
+    .work a,.desc,.work a::before{transition:none}
+    .desc{transform:none}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <h1>wow works</h1>
+    <p class="lead">Three browser works made from a single prompt, filed here exactly as each model generated them. <span>Each is one self-contained HTML file.</span></p>
+  </header>
+
+  <ol class="works">
+    <li class="work" style="--mark:#c9a35f">
+      <a href="DeepSeek-V4.1-Flash-1017/harmonia/">
+        <span class="numeral" aria-hidden="true">I</span>
+        <span>
+          <span class="name">Harmonia</span>
+          <span class="model">DeepSeek-V4.1-Flash-1017</span>
+          <span class="desc">Planetary positions computed from Keplerian elements and sonified as music. Click a planet, drag to look, scroll to change the passage of time.</span>
+        </span>
+      </a>
+    </li>
+    <li class="work" style="--mark:#82b3b8">
+      <a href="GLM-5.3-Flash-FP4-Local/abyss-cathedral/">
+        <span class="numeral" aria-hidden="true">II</span>
+        <span>
+          <span class="name">The Drowned Cathedral</span>
+          <span class="model">GLM-5.3-Flash-FP4-Local</span>
+          <span class="desc">A WebGL2 cathedral beneath still water. Move the pointer to look around, click to let the sound in, scroll to drift.</span>
+        </span>
+      </a>
+    </li>
+    <li class="work" style="--mark:#c9c3b6">
+      <a href="GLM-5.3-Flash-FP4-Local/ink-cosmos/">
+        <span class="numeral" aria-hidden="true">III</span>
+        <span>
+          <span class="name">墨の宇宙 / Ink Cosmos</span>
+          <span class="model">GLM-5.3-Flash-FP4-Local</span>
+          <span class="desc">An ink-wash universe that redraws itself at every touch. Click to release a burst of ink.</span>
+        </span>
+      </a>
+    </li>
+  </ol>
+
+  <footer>
+    <p>The prompt came from <a href="https://mia-ai.net/lab/experiments">mia-ai.net/lab/experiments</a> and was given verbatim. Source is kept at <a href="https://github.com/making/wow-works">github.com/making/wow-works</a>.</p>
+    <details>
+      <summary>The prompt</summary>
+      <blockquote>Build me something when people see it, they will say "Wow". Must be immersive, when people see it, they will be stunned by what they see.
+
+This can be a video, or anything else you can think of.
+
+Be creative. Go wild. Dig deep.
+
+No AI slop. Something unique, think outside of the box. Think big. Think amazing. Something no other model done before.
+
+Be proud. Show your best. Don't disappoint.</blockquote>
+    </details>
+    <p class="fine">Some works need WebGL2 or Web Audio; sound begins only after a gesture.</p>
+  </footer>
+</div>
+</body>
+</html>
