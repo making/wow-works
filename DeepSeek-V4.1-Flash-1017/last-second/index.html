@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>The Last Second</title>
+<meta name="description" content="A probe falls into a black hole. Its final second never ends.">
+<meta name="theme-color" content="#000000">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23000'/%3E%3Cellipse cx='32' cy='32' rx='27' ry='5.5' fill='none' stroke='%23ff9d52' stroke-opacity='.85' stroke-width='2.4'/%3E%3Ccircle cx='32' cy='32' r='14' fill='%23000' stroke='%23d9cdbd' stroke-opacity='.5' stroke-width='1.4'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<canvas id="scene" aria-label="A black hole, seen by an infalling probe"></canvas>
+
+<div id="grain" aria-hidden="true"></div>
+<div id="vignette" aria-hidden="true"></div>
+
+<!-- entry veil -->
+<div id="entry" class="veil">
+  <div class="entry-inner">
+    <div class="eyebrow">SIGNAL&nbsp;&nbsp;/&nbsp;&nbsp;PROBE 7&nbsp;&nbsp;/&nbsp;&nbsp;LAST TRANSMISSION</div>
+    <h1>THE LAST SECOND</h1>
+    <p class="sub">A probe falls into a black hole.<br>Its final second never ends.</p>
+    <button id="enter" type="button">
+      <span class="ring"></span>
+      <span class="label">ENTER</span>
+    </button>
+    <div class="foot">headphones recommended&nbsp;&nbsp;·&nbsp;&nbsp;full screen</div>
+  </div>
+</div>
+
+<!-- in-scene overlay -->
+<div id="hud" class="hud" aria-hidden="false">
+  <header class="hud-top">
+    <div class="tag"><span class="dot"></span>RECEIVING</div>
+    <div class="tag right">PROBE 7&nbsp;&nbsp;·&nbsp;&nbsp;r<sub>s</sub> FRAME</div>
+  </header>
+
+  <section class="transmission" id="transmission" aria-live="polite"></section>
+
+  <aside class="telemetry" id="telemetry">
+    <div class="row"><span>ALTITUDE</span><b id="t-alt">—</b><i>r<sub>s</sub></i></div>
+    <div class="row"><span>PROPER&nbsp;&tau;</span><b id="t-tau">—</b><i>s</i></div>
+    <div class="row"><span>CLOCK&nbsp;RATE</span><b id="t-rate">—</b><i>d&tau;′/d&tau;</i></div>
+    <div class="row"><span>REDSHIFT</span><b id="t-z">—</b><i>z</i></div>
+    <div class="meter"><span id="t-bar"></span></div>
+  </aside>
+
+  <div class="hint" id="hint">
+    <span class="k">drag</span> look &nbsp;&nbsp; <span class="k">scroll</span> fall &nbsp;&nbsp; <span class="k">space</span> let go
+  </div>
+
+  <div class="release" id="release">
+    <button id="letgo" type="button">LET GO</button>
+  </div>
+</div>
+
+<!-- ending -->
+<div id="ending" class="veil hidden">
+  <div class="ending-inner">
+    <div class="eyebrow">PROBE 7&nbsp;&nbsp;/&nbsp;&nbsp;LOST</div>
+    <h2>The last second<br>is still happening.</h2>
+    <p class="sub" id="end-detail">Its light never reaches us.<br>We keep receiving it anyway.</p>
+    <button id="again" type="button"><span class="label">WATCH AGAIN</span></button>
+  </div>
+</div>
+
+<div id="sound" class="sound" title="Toggle sound">
+  <span class="bars"><i></i><i></i><i></i><i></i></span>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
