@@ -1,0 +1,1320 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>138億年 — The Story of Thirteen Point Eight Billion Years</title>
+<meta name="description" content="A single continuous take from the Planck epoch to the present. 13.8 billion years, rendered in real time.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='5' fill='%23fff3dc'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --ink:#f2ece0;
+    --dim:rgba(242,236,224,.46);
+    --faint:rgba(242,236,224,.16);
+    --hair:rgba(242,236,224,.13);
+    --mincho:"Hiragino Mincho ProN","Yu Mincho","YuMincho","Noto Serif JP",serif;
+    --mono:"SF Mono","Menlo","Consolas",monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#000;overflow:hidden}
+  body{
+    color:var(--ink);
+    font-family:var(--mincho);
+    -webkit-font-smoothing:antialiased;
+    cursor:default;
+    user-select:none;
+  }
+  canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block}
+
+  /* ---------- veil / grain ---------- */
+  #veil{
+    position:fixed;inset:0;background:#000;pointer-events:none;
+    transition:opacity 2.6s cubic-bezier(.2,.7,.3,1);z-index:60;
+  }
+  #veil.gone{opacity:0}
+  #veil.done{display:none}
+
+  /* ---------- hud ---------- */
+  #hud{position:fixed;inset:0;pointer-events:none;z-index:20;opacity:0;transition:opacity 2s ease 1s}
+  #hud.on{opacity:1}
+  .corner{position:absolute;font-family:var(--mono);font-size:10px;letter-spacing:.22em;line-height:1.9;color:var(--dim)}
+  #hudTL{top:38px;left:44px}
+  #hudTR{top:38px;right:44px;text-align:right}
+  #hudBL{bottom:52px;left:44px}
+  #hudBR{bottom:52px;right:44px;text-align:right}
+  .k{display:block;color:rgba(242,236,224,.30);font-size:9px;letter-spacing:.3em}
+  .v{display:block;color:var(--ink);font-size:11px;letter-spacing:.14em}
+  .v.big{font-size:20px;letter-spacing:.06em;font-variant-numeric:tabular-nums}
+  #epochJa{font-family:var(--mincho);font-size:15px;letter-spacing:.34em;color:var(--ink);opacity:.92}
+  #epochEn{margin-top:2px}
+  .rule{height:1px;background:var(--hair);margin:10px 0 9px;width:64px}
+  #hudTL .rule{width:96px}
+  #hudTR .rule{width:120px;margin-left:auto}
+
+  /* ---------- narrative ---------- */
+  #line{
+    position:fixed;left:0;right:0;top:73%;transform:translateY(-50%);
+    text-align:center;z-index:25;pointer-events:none;padding:0 8vw;
+  }
+  #scrim{
+    position:fixed;left:0;right:0;bottom:0;height:44vh;z-index:24;pointer-events:none;
+    background:linear-gradient(to top,
+      rgba(0,0,0,.80) 0%, rgba(0,0,0,.55) 24%, rgba(0,0,0,.22) 56%, rgba(0,0,0,.06) 80%, rgba(0,0,0,0) 100%);
+  }
+  #lineMain{
+    font-family:var(--mincho);font-weight:400;
+    font-size:clamp(19px,2.35vw,31px);
+    letter-spacing:.16em;line-height:1.85;
+    color:rgba(250,246,238,.96);
+    text-shadow:0 0 30px rgba(0,0,0,.95),0 0 10px rgba(0,0,0,.9);
+    opacity:0;
+  }
+  #lineSub{
+    margin-top:22px;
+    font-family:var(--mono);font-size:10px;letter-spacing:.3em;
+    color:rgba(242,236,224,.52);opacity:0;
+  }
+
+  /* ---------- rail ---------- */
+  #railWrap{
+    position:fixed;left:50%;bottom:0;transform:translateX(-50%);
+    width:min(880px,72vw);height:92px;z-index:30;
+    opacity:0;transition:opacity 1.6s ease 1.4s;
+  }
+  #railWrap.on{opacity:1}
+  #rail{position:absolute;left:0;right:0;bottom:44px;height:26px;cursor:ew-resize}
+  #railLine{position:absolute;left:0;right:0;top:12px;height:1px;background:rgba(242,236,224,.17)}
+  #railFill{position:absolute;left:0;top:12px;height:1px;background:rgba(242,236,224,.55);width:0}
+  .tick{position:absolute;top:8px;width:1px;height:9px;background:rgba(242,236,224,.22)}
+  .tick.major{height:14px;top:5px;background:rgba(242,236,224,.4)}
+  #head{position:absolute;top:6px;width:9px;height:13px;margin-left:-4.5px;
+    background:var(--ink);box-shadow:0 0 18px rgba(255,246,225,.85);
+    transition:transform .12s ease}
+  #railLabels{position:absolute;left:0;right:0;bottom:6px;height:14px;
+    font-family:var(--mono);font-size:8px;letter-spacing:.18em;color:rgba(242,236,224,.26)}
+  #railLabels span{position:absolute;transform:translateX(-50%);white-space:nowrap}
+
+  /* ---------- gate ---------- */
+  #gate{
+    position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(ellipse at 50% 50%,#0a0908 0%,#000 62%);
+    transition:opacity 1.8s ease;
+  }
+  #gate.out{opacity:0;pointer-events:none}
+  .gwrap{text-align:center;position:relative}
+  .gdot{
+    width:5px;height:5px;border-radius:50%;background:#fff;margin:0 auto 46px;
+    box-shadow:0 0 26px 3px rgba(255,240,214,.9),0 0 80px 12px rgba(255,214,160,.25);
+    animation:breathe 4.6s ease-in-out infinite;
+  }
+  @keyframes breathe{0%,100%{transform:scale(1);opacity:.85}50%{transform:scale(1.5);opacity:1}}
+  .gtitle{
+    font-family:var(--mincho);font-weight:400;
+    font-size:clamp(46px,8.6vw,104px);
+    letter-spacing:.1em;line-height:1;color:#f4eee1;
+  }
+  .gtitle .small{font-size:.42em;letter-spacing:.28em;vertical-align:.9em;opacity:.55;margin-left:.12em}
+  .gsub{
+    margin-top:28px;font-family:var(--mono);font-size:10px;letter-spacing:.44em;color:rgba(242,236,224,.36);
+  }
+  .gdesc{
+    margin-top:44px;font-family:var(--mincho);font-size:13px;letter-spacing:.2em;line-height:2.2;
+    color:rgba(242,236,224,.52)
+  }
+  #begin{
+    margin-top:52px;background:none;border:1px solid rgba(242,236,224,.28);color:var(--ink);
+    font-family:var(--mono);font-size:10px;letter-spacing:.4em;padding:16px 40px 15px 44px;
+    cursor:pointer;transition:all .5s ease;
+  }
+  #begin:hover{background:rgba(242,236,224,.08);border-color:rgba(242,236,224,.62);letter-spacing:.46em}
+  .gnote{margin-top:26px;font-family:var(--mono);font-size:9px;letter-spacing:.24em;color:rgba(242,236,224,.22)}
+
+  /* ---------- end card ---------- */
+  #end{
+    position:fixed;left:50%;bottom:9%;transform:translateX(-50%);
+    z-index:35;text-align:center;opacity:0;pointer-events:none;transition:opacity 2s ease;
+  }
+  #end.on{opacity:1;pointer-events:auto}
+  #end .e1{font-family:var(--mono);font-size:10px;letter-spacing:.4em;color:rgba(242,236,224,.34)}
+  #end .e2{margin-top:18px;font-family:var(--mincho);font-size:15px;letter-spacing:.3em;color:rgba(242,236,224,.8)}
+  #replay{
+    margin-top:32px;background:none;border:1px solid rgba(242,236,224,.24);color:var(--ink);
+    font-family:var(--mono);font-size:9px;letter-spacing:.36em;padding:12px 30px 11px 33px;cursor:pointer;
+    transition:all .4s ease;
+  }
+  #replay:hover{background:rgba(242,236,224,.07);border-color:rgba(242,236,224,.5)}
+
+  #hint{
+    position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:31;
+    font-family:var(--mono);font-size:9px;letter-spacing:.28em;color:rgba(242,236,224,.30);
+    opacity:0;transition:opacity 1.2s ease;pointer-events:none;
+  }
+  #hint.on{opacity:1}
+  body.paused #hud::after{content:"PAUSED";position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);font-family:var(--mono);font-size:10px;letter-spacing:.5em;color:rgba(242,236,224,.5)}
+
+  @media (max-width:760px){
+    #hudTL{top:22px;left:22px}
+    #hudTR{top:22px;right:22px}
+    #hudBL,#hudBR{display:none}
+    #railWrap{width:86vw}
+    .corner{font-size:9px}
+    .v.big{font-size:16px}
+  }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div id="hud">
+  <div class="corner" id="hudTL">
+    <span class="k">EPOCH</span>
+    <div class="rule"></div>
+    <div id="epochJa">—</div>
+    <div id="epochEn">—</div>
+  </div>
+  <div class="corner" id="hudTR">
+    <span class="k">COSMIC TIME SINCE ORIGIN</span>
+    <div class="rule"></div>
+    <div class="v big" id="tVal">0</div>
+    <div class="v" id="tUnit">yr</div>
+  </div>
+  <div class="corner" id="hudBL">
+    <span class="k">TEMPERATURE</span>
+    <span class="v" id="temp">—</span>
+  </div>
+  <div class="corner" id="hudBR">
+    <span class="k">REDSHIFT</span>
+    <span class="v" id="zval">—</span>
+  </div>
+</div>
+
+<div id="scrim"></div>
+<div id="line">
+  <div id="lineMain"></div>
+  <div id="lineSub"></div>
+</div>
+
+<div id="railWrap">
+  <div id="rail">
+    <div id="railLine"></div>
+    <div id="railFill"></div>
+    <div id="head"></div>
+  </div>
+  <div id="railLabels"></div>
+</div>
+<div id="hint">DRAG THE LINE TO TRAVEL · SPACE TO PAUSE · M FOR SOUND</div>
+
+<div id="end">
+  <div class="e1">END OF TRANSMISSION</div>
+  <div class="e2">もう一度、はじまりから</div>
+  <button id="replay">REPLAY</button>
+</div>
+
+<div id="gate">
+  <div class="gwrap">
+    <div class="gdot"></div>
+    <h1 class="gtitle">138<span class="small">億年</span></h1>
+    <div class="gsub">A SINGLE CONTINUOUS TAKE · 2:55</div>
+    <div class="gdesc">宇宙の歴史を、途切れないひとつの映像として。<br>音が出ます。ヘッドホンで。</div>
+    <button id="begin">BEGIN</button>
+    <div class="gnote">CLICK TO UNLOCK AUDIO</div>
+  </div>
+</div>
+
+<div id="veil"></div>
+
+<script>
+"use strict";
+/* =========================================================================
+   138億年 — one continuous shot from the Planck epoch to the present.
+   Everything below is generated in real time: no textures, no video,
+   no external assets.
+   ========================================================================= */
+
+const $ = s => document.querySelector(s);
+const clamp = (x,a,b)=>Math.min(b,Math.max(a,x));
+const lerp = (a,b,t)=>a+(b-a)*t;
+const smooth = (a,b,x)=>{const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t);};
+
+/* ------------------------------------------------------------------ beats */
+/* p: story progress. tsec: real seconds since the Big Bang.
+   v: visual state. form[]: weight of each particle formation.            */
+const BEATS = [
+{ p:0.000, tsec:1e-43, temp:"1.4×10³² K", z:"10²⁹",
+  ja:"プランク期", en:"PLANCK EPOCH",
+  line:"ここには、まだ「ここ」がない。", sub:"T + 10⁻⁴³ s",
+  v:{dens:.10,turb:2.6,star:.00,core:1.7,glow:1.0,shellR:1.0,shellI:0,warm:0,dark:0,
+     tint:[1.55,1.48,1.40],camZ:4.2,camY:0,rot:0.0,expo:1.15,bloom:1.5,size:2.6,inten:3.2,ca:2.0,
+     form:[1,0,0,0,0,0,0,0,0,0]}},
+{ p:0.050, tsec:1e-36, temp:"1.0×10²⁷ K", z:"10²⁷",
+  ja:"インフレーション", en:"INFLATION",
+  line:"宇宙は、測れない速さで膨らんだ。", sub:"T + 10⁻³⁶ s",
+  v:{dens:.55,turb:3.4,star:.00,core:1.7,glow:1.5,shellR:1.15,shellI:.15,warm:0,dark:0,
+     tint:[1.45,1.10,1.45],camZ:3.5,camY:0,rot:0.4,expo:1.05,bloom:1.7,size:2.3,inten:2.5,ca:2.6,
+     form:[0,1,0,0,0,0,0,0,0,0]}},
+{ p:0.100, tsec:1e-12, temp:"1.0×10¹⁵ K", z:"10¹⁵",
+  ja:"クォーク期", en:"QUARK EPOCH",
+  line:"物質と反物質は、ほとんどが消えた。", sub:"T + 10⁻¹² s",
+  v:{dens:.95,turb:4.2,star:.00,core:1.1,glow:1.1,shellR:1.05,shellI:.20,warm:0,dark:0,
+     tint:[1.40,0.92,0.80],camZ:3.1,camY:.1,rot:0.9,expo:1.0,bloom:1.5,size:2.1,inten:2.1,ca:2.2,
+     form:[0,1,0,0,0,0,0,0,0,0]}},
+{ p:0.150, tsec:1e-6, temp:"1.0×10¹³ K", z:"10¹²",
+  ja:"ハドロン期", en:"HADRON EPOCH",
+  line:"残ったわずかが、陽子になった。", sub:"T + 10⁻⁶ s",
+  v:{dens:1.10,turb:4.6,star:.00,core:.95,glow:1.0,shellR:1.02,shellI:.30,warm:0,dark:0,
+     tint:[1.32,0.86,0.62],camZ:2.9,camY:-.1,rot:1.4,expo:.98,bloom:1.4,size:2.0,inten:1.9,ca:2.0,
+     form:[0,.92,.08,0,0,0,0,0,0,0]}},
+{ p:0.200, tsec:180, temp:"1.0×10⁹ K", z:"4×10⁸",
+  ja:"元素合成", en:"NUCLEOSYNTHESIS",
+  line:"最初の原子核は、水素とヘリウムだけ。", sub:"T + 3 min",
+  v:{dens:1.05,turb:3.9,star:.02,core:.8,glow:.9,shellR:1.00,shellI:.55,warm:0,dark:0,
+     tint:[1.20,0.76,0.44],camZ:2.8,camY:0,rot:1.9,expo:.98,bloom:1.3,size:1.95,inten:1.7,ca:1.8,
+     form:[0,.55,.45,0,0,0,0,0,0,0]}},
+{ p:0.260, tsec:1.5e12, temp:"9.0×10³ K", z:"3×10³",
+  ja:"物質優勢", en:"MATTER DOMINATION",
+  line:"重力が、静かに働きはじめる。", sub:"T + 47,000 yr",
+  v:{dens:.90,turb:3.2,star:.05,core:.55,glow:.85,shellR:1.00,shellI:.90,warm:0,dark:.05,
+     tint:[1.15,0.80,0.52],camZ:2.7,camY:.05,rot:2.3,expo:1.0,bloom:1.25,size:1.9,inten:1.5,ca:1.6,
+     form:[0,.22,.78,0,0,0,0,0,0,0]}},
+{ p:0.320, tsec:1.2e13, temp:"3.0×10³ K", z:"1.1×10³",
+  ja:"再結合", en:"RECOMBINATION",
+  line:"光が、はじめて自由になった。", sub:"T + 380,000 yr — the oldest light there is",
+  v:{dens:.78,turb:2.6,star:.10,core:.55,glow:1.15,shellR:1.00,shellI:1.65,warm:0,dark:0,
+     tint:[1.24,0.97,0.72],camZ:2.55,camY:0,rot:2.7,expo:1.05,bloom:1.35,size:2.0,inten:2.0,ca:1.4,
+     form:[0,.10,.90,0,0,0,0,0,0,0]}},
+{ p:0.400, tsec:3.1e15, temp:"6.0×10¹ K", z:"20",
+  ja:"暗黒時代", en:"THE DARK AGES",
+  line:"一億年、宇宙は暗かった。", sub:"T + 100,000,000 yr",
+  v:{dens:.16,turb:1.6,star:.06,core:.05,glow:.35,shellR:1.0,shellI:.06,warm:0,dark:.92,
+     tint:[0.42,0.52,0.78],camZ:3.4,camY:0,rot:3.2,expo:1.55,bloom:.55,size:1.7,inten:.34,ca:.8,
+     form:[0,0,.14,.86,0,0,0,0,0,0]}},
+{ p:0.480, tsec:6.3e15, temp:"4.0×10¹ K", z:"14",
+  ja:"宇宙の夜明け", en:"COSMIC DAWN",
+  line:"最初の星が、点いた。", sub:"T + 200,000,000 yr",
+  v:{dens:.30,turb:2.2,star:.85,core:.10,glow:.55,shellR:1.0,shellI:.10,warm:0,dark:.55,
+     tint:[0.84,0.93,1.35],camZ:3.6,camY:0,rot:3.6,expo:1.35,bloom:1.05,size:1.9,inten:1.5,ca:1.0,
+     form:[0,0,0,.12,0,0,.88,0,0,0]}},
+{ p:0.560, tsec:2.2e16, temp:"2.0×10¹ K", z:"6",
+  ja:"再電離", en:"REIONIZATION",
+  line:"星の光が、宇宙を透明にした。", sub:"T + 700,000,000 yr",
+  v:{dens:.55,turb:2.8,star:.55,core:.10,glow:.8,shellR:1.0,shellI:.15,warm:0,dark:.18,
+     tint:[0.62,0.76,1.22],camZ:3.1,camY:0,rot:4.0,expo:1.15,bloom:1.15,size:1.9,inten:1.3,ca:1.2,
+     form:[0,0,0,0,.72,0,.28,0,0,0]}},
+{ p:0.640, tsec:9.5e16, temp:"1.0×10¹ K", z:"2.5",
+  ja:"銀河の形成", en:"GALAXY ASSEMBLY",
+  line:"銀河が、無数に編まれる。", sub:"T + 3,000,000,000 yr",
+  v:{dens:.40,turb:2.4,star:.45,core:.18,glow:.85,shellR:1.0,shellI:.05,warm:0,dark:.05,
+     tint:[0.88,0.90,1.15],camZ:2.75,camY:0,rot:4.5,expo:1.1,bloom:1.25,size:1.95,inten:1.45,ca:1.4,
+     form:[0,0,0,0,.10,.90,0,0,0,0]}},
+{ p:0.720, tsec:2.5e17, temp:"5.0 K", z:"0.9",
+  ja:"星形成の最盛期", en:"PEAK STAR FORMATION",
+  line:"宇宙は、いちばん明るかった。", sub:"T + 8,000,000,000 yr",
+  v:{dens:.45,turb:2.2,star:.65,core:.20,glow:1.0,shellR:1.0,shellI:.03,warm:0,dark:0,
+     tint:[1.02,0.97,1.02],camZ:2.4,camY:0,rot:5.0,expo:1.1,bloom:1.45,size:2.0,inten:1.85,ca:1.5,
+     form:[0,0,0,0,.08,1.0,0,0,0,0]}},
+{ p:0.790, tsec:2.9e17, temp:"4.0 K", z:"0.4",
+  ja:"太陽系の誕生", en:"A SOLAR SYSTEM FORMS",
+  line:"46億年前。ここに、ひとつの星が生まれる。", sub:"T + 9,200,000,000 yr",
+  v:{dens:.42,turb:1.9,star:.55,core:.95,glow:.75,shellR:1.0,shellI:0,warm:.10,dark:0,
+     tint:[1.05,0.86,0.62],camZ:2.15,camY:.05,rot:5.4,expo:1.1,bloom:1.3,size:2.0,inten:1.6,ca:1.3,
+     form:[0,0,0,0,0,.22,.10,.68,0,0]}},
+{ p:0.860, tsec:3.0e17, temp:"3.5 K", z:"0.3",
+  ja:"地球", en:"EARTH",
+  line:"海ができ、大気ができた。", sub:"T + 9,540,000,000 yr",
+  v:{dens:.36,turb:1.7,star:.55,core:.22,glow:.8,shellR:1.0,shellI:0,warm:.22,dark:0,
+     tint:[0.58,0.88,1.05],camZ:1.85,camY:0,rot:5.8,expo:1.1,bloom:1.3,size:2.0,inten:1.45,ca:1.2,
+     form:[0,0,0,0,0,0,0,.22,.78,0]}},
+{ p:0.920, tsec:3.15e17, temp:"3.0 K", z:"0.2",
+  ja:"生命", en:"LIFE",
+  line:"生命は、38億年かけてここまで来た。", sub:"T + 10,000,000,000 yr",
+  v:{dens:.30,turb:1.6,star:.62,core:.24,glow:.85,shellR:1.0,shellI:0,warm:.34,dark:0,
+     tint:[0.64,0.98,0.86],camZ:1.62,camY:0,rot:6.2,expo:1.1,bloom:1.3,size:2.0,inten:1.40,ca:1.1,
+     form:[0,0,0,0,0,0,0,.10,.90,0]}},
+{ p:0.970, tsec:4.35e17, temp:"2.725 K", z:"0",
+  ja:"人類", en:"HUMANS",
+  line:"人類が現れたのは、最後の30万年。", sub:"T + 13,799,700,000 yr",
+  v:{dens:.24,turb:1.5,star:.85,core:.24,glow:.9,shellR:1.0,shellI:0,warm:.40,dark:0,
+     tint:[1.02,0.86,0.70],camZ:2.05,camY:0,rot:6.6,expo:1.1,bloom:1.40,size:2.1,inten:1.35,ca:1.0,
+     form:[0,0,0,0,0,0,0,.02,.70,.28]}},
+{ p:1.000, tsec:4.355e17, temp:"2.725 K", z:"0",
+  ja:"いま", en:"NOW",
+  line:"138億年の最後に、あなたがいる。", sub:"T + 13,800,000,000 yr",
+  v:{dens:.07,turb:1.3,star:.95,core:0.32,glow:0.40,shellR:1.0,shellI:0,warm:.20,dark:.45,
+     tint:[1.05,0.90,0.74],camZ:3.40,camY:0,rot:7.0,expo:1.16,bloom:1.65,size:2.4,inten:2.3,ca:1.0,
+     form:[.92,0,0,0,0,0,0,0,.05,.03]}}
+];
+
+/* schedule: wall-clock seconds for each beat */
+const SCHED = [0,9,17,24,31,40,50,64,80,94,108,120,131,142,152,162,175];
+const TOTAL = SCHED[SCHED.length-1];
+
+/* --------------------------------------------------------------- state --- */
+const state = {
+  progress: 0, playing:false, muted:false, started:false, ended:false,
+  mouse:{x:0,y:0}, mx:0, my:0, lastBeat:-1
+};
+
+function beatIndexAt(p){
+  let i=0; for(let k=0;k<BEATS.length;k++) if(BEATS[k].p<=p+1e-9) i=k; return i;
+}
+function scheduleToProgress(t){
+  if(t<=0) return 0;
+  if(t>=TOTAL) return 1;
+  for(let i=0;i<SCHED.length-1;i++){
+    if(t>=SCHED[i] && t<=SCHED[i+1]){
+      const u=(t-SCHED[i])/(SCHED[i+1]-SCHED[i]);
+      const e=u*u*(3-2*u); // ease each segment so beats breathe
+      return lerp(BEATS[i].p, BEATS[i+1].p, e);
+    }
+  }
+  return 1;
+}
+function progressToSchedule(p){
+  for(let i=0;i<BEATS.length-1;i++){
+    if(p>=BEATS[i].p && p<=BEATS[i+1].p){
+      const u=(p-BEATS[i].p)/(BEATS[i+1].p-BEATS[i].p);
+      // invert smootherstep numerically
+      let lo=0,hi=1;
+      for(let k=0;k<24;k++){const m=(lo+hi)/2;const e=m*m*(3-2*m);if(e<u)lo=m;else hi=m;}
+      const m=(lo+hi)/2;
+      return lerp(SCHED[i],SCHED[i+1],m);
+    }
+  }
+  return p>=1?TOTAL:0;
+}
+
+/* per-beat particle brightness distribution: 1.5 = dense plasma,
+   5.0 = a sparse starfield where only a few points carry light */
+const TAIL=[1.5,1.5,1.5,1.6,1.7,1.8,1.8,2.8,5.0,3.4,3.0,2.6,2.4,2.4,2.3,2.2,2.0];
+const LIT =[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.1,0.25,0.45,0.60,1.0,1.0,0.85,0.55];
+const BODY=[0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0];
+const BODYC=[[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0],
+  [0.055,0.175,0.360],[0.070,0.240,0.250],[0.300,0.235,0.175],[0.20,0.15,0.12]];
+
+function sampleState(p){
+  let a=BEATS[0], b=BEATS[0], u=0;
+  if(p>=BEATS[BEATS.length-1].p){ a=b=BEATS[BEATS.length-1]; }
+  else{
+    for(let i=0;i<BEATS.length-1;i++){
+      if(p>=BEATS[i].p && p<BEATS[i+1].p){
+        a=BEATS[i]; b=BEATS[i+1];
+        u=(p-a.p)/(b.p-a.p);
+        break;
+      }
+    }
+  }
+  // narrow transitions: hold the beat's look, then snap quickly to the next
+  const s = smooth(0.62,1.0,u);
+  const A=a.v, B=b.v;
+  const out = {
+    dens:lerp(A.dens,B.dens,s), turb:lerp(A.turb,B.turb,s), star:lerp(A.star,B.star,s),
+    core:lerp(A.core,B.core,s), glow:lerp(A.glow,B.glow,s), shellR:lerp(A.shellR,B.shellR,s),
+    shellI:lerp(A.shellI,B.shellI,s), warm:lerp(A.warm,B.warm,s), dark:lerp(A.dark,B.dark,s),
+    tint:[lerp(A.tint[0],B.tint[0],s),lerp(A.tint[1],B.tint[1],s),lerp(A.tint[2],B.tint[2],s)],
+    camZ:lerp(A.camZ,B.camZ,s), camY:lerp(A.camY,B.camY,s), rot:lerp(A.rot,B.rot,s),
+    expo:lerp(A.expo,B.expo,s), bloom:lerp(A.bloom,B.bloom,s), size:lerp(A.size,B.size,s),
+    inten:lerp(A.inten,B.inten,s), ca:lerp(A.ca,B.ca,s), form:[],
+    tail:lerp(TAIL[BEATS.indexOf(a)],TAIL[BEATS.indexOf(b)],s),
+    lit:lerp(LIT[BEATS.indexOf(a)],LIT[BEATS.indexOf(b)],s),
+    body:lerp(BODY[BEATS.indexOf(a)],BODY[BEATS.indexOf(b)],s),
+    bodyCol:[lerp(BODYC[BEATS.indexOf(a)][0],BODYC[BEATS.indexOf(b)][0],s),
+             lerp(BODYC[BEATS.indexOf(a)][1],BODYC[BEATS.indexOf(b)][1],s),
+             lerp(BODYC[BEATS.indexOf(a)][2],BODYC[BEATS.indexOf(b)][2],s)]
+  };
+  for(let i=0;i<10;i++) out.form.push(lerp(A.form[i],B.form[i],s));
+  const wsum = out.form.reduce((x,y)=>x+y,0)||1;
+  out.form = out.form.map(x=>x/wsum);
+  return out;
+}
+
+/* ================================ WEBGL ================================= */
+const canvas = $("#gl");
+const gl = canvas.getContext("webgl2",{antialias:false,alpha:false,depth:false,stencil:false,powerPreference:"high-performance"});
+
+if(!gl){
+  document.body.innerHTML = '<div style="color:#eee;font-family:serif;padding:20vh 10vw;font-size:16px;line-height:2">この作品には WebGL2 が必要です。<br>Chrome でお試しください。</div>';
+  throw new Error("no webgl2");
+}
+
+const HDR = !!gl.getExtension("EXT_color_buffer_float");
+const INT_FMT = HDR ? gl.RGBA16F : gl.RGBA8;
+const TEX_TYPE = HDR ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE;
+
+function compile(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)){
+    console.error(gl.getShaderInfoLog(s), src.split("\n").map((l,i)=>(i+1)+": "+l).join("\n"));
+  }
+  return s;
+}
+function program(vs, fs){
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER,vs));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER,fs));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p, gl.LINK_STATUS)) console.error(gl.getProgramInfoLog(p));
+  const u = {};
+  const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for(let i=0;i<n;i++){
+    const info = gl.getActiveUniform(p,i);
+    const name = info.name.replace(/\[0\]$/,"");
+    u[name] = gl.getUniformLocation(p, name);
+  }
+  return {p,u};
+}
+function target(w,h,filter){
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D,0,INT_FMT,w,h,0,gl.RGBA,TEX_TYPE,null);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,filter||gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,filter||gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tex,0);
+  if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE)
+    console.warn("incomplete framebuffer", w, h, HDR);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  return {tex,fb,w,h};
+}
+
+/* ------------------------------------------------------------ shared GLSL */
+const COMMON = `
+float hash21(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }
+float noise2(vec2 p){
+  vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+  float a=hash21(i), b=hash21(i+vec2(1,0)), c=hash21(i+vec2(0,1)), d=hash21(i+vec2(1,1));
+  return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);
+}
+float fbm2(vec2 p){
+  float v=0.0,a=0.5;
+  for(int i=0;i<5;i++){ v+=a*noise2(p); p=p*2.03+vec2(11.3,7.7); a*=0.5; }
+  return v;
+}
+`;
+
+/* -------------------------------------------------------- background pass */
+const BG_VS = `#version 300 es
+in vec2 aPos; out vec2 vUv;
+void main(){ vUv=aPos*0.5+0.5; gl_Position=vec4(aPos,0.0,1.0); }`;
+
+const BG_FS = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 fragColor;
+uniform vec2 uRes; uniform float uTime, uP;
+uniform float uDens,uTurb,uStar,uCore,uGlow,uShellR,uShellI,uWarm,uDark,uBodyR,uBody;
+uniform vec3 uBodyCol;
+uniform vec3 uTint;
+${COMMON}
+
+float starLayer(vec2 uv, float scale, float seed, float t, float sparsity){
+  vec2 p=uv*scale; vec2 id=floor(p); vec2 f=fract(p)-0.5;
+  float h=hash21(id+seed);
+  float m=step(sparsity, h);
+  vec2 off=vec2(hash21(id+seed+3.17), hash21(id+seed+7.73))-0.5;
+  float d=length(f-off*0.85);
+  float tw=0.55+0.45*sin(t*1.7+h*47.0);
+  float b=pow(h,3.0);
+  return m*tw*smoothstep(0.055,0.0,d)*(0.35+b*1.8);
+}
+
+void main(){
+  vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;
+  float r=length(uv);
+  float t=uTime;
+
+  vec3 col=vec3(0.0);
+
+  // deep space floor, very slightly blue
+  col += vec3(0.004,0.006,0.012)*(1.0-uDark*0.85);
+
+  // large-scale structure: domain-warped fbm, thresholded so it reads as
+  // luminous filaments on black rather than fog
+  vec2 q=uv*(1.25+uTurb*0.42);
+  float w1=fbm2(q*0.85+vec2(t*0.006,-t*0.004));
+  vec2 warp=vec2(fbm2(q*0.8+w1*1.15+3.1), fbm2(q*0.8+w1*1.35-1.7));
+  float n=fbm2(q*1.0+warp*0.85+vec2(t*0.003,t*0.002));
+  float cl=smoothstep(0.54,1.0,n);
+  cl=cl*cl*cl*sqrt(cl);
+
+  // ridged field for the sharp bright veins
+  float rn=fbm2(q*2.9+warp*0.9+vec2(t*0.008));
+  float vein=pow(1.0-abs(rn*2.0-1.0),10.0);
+
+  // the body of the cloud is cold; the epoch's tint lives in the hot veins
+  vec3 cool=vec3(0.09,0.17,0.50);
+  col += cool*cl*uDens*0.20;
+  col += mix(uTint,vec3(1.0,0.95,0.88),0.35)*vein*uDens*0.34*(0.22+uTurb*0.15);
+
+  // hot centre: small and intense
+  float cg=exp(-r*r*17.0);
+  col += uTint*cg*uCore*0.30;
+  col += vec3(1.0,0.97,0.92)*pow(cg,2.4)*uCore*0.28;
+
+  // wide, faint haze for depth
+  col += uTint*exp(-r*4.5)*uGlow*0.03;
+
+  // the surface of last scattering: a mottled sphere of afterglow
+  if(uShellI>0.001){
+    float sr=uShellR*0.235;
+    float mott=0.15+1.15*fbm2(uv*17.0+vec2(t*0.06));
+    float disc=smoothstep(sr+0.02,sr-0.13,r);
+    float rim=smoothstep(0.028,0.0,abs(r-sr));
+    col += uTint*disc*mott*uShellI*0.30;
+    col += uTint*rim*mott*uShellI*0.85;
+    col += uTint*exp(-abs(r-sr)*14.0)*uShellI*0.16;
+  }
+
+  // stars
+  if(uStar>0.001){
+    float s=0.0;
+    s += starLayer(uv, 74.0, 1.0, t, 0.972)*1.0;
+    s += starLayer(uv, 38.0, 4.0, t, 0.986)*1.7;
+    s += starLayer(uv, 17.0, 9.0, t, 0.993)*3.0;
+    col += mix(vec3(0.68,0.80,1.0), vec3(1.0,0.90,0.76), hash21(floor(uv*37.0)))*s*uStar*0.22;
+  }
+
+  // warm foreground presence (a world, a life)
+  col += vec3(1.0,0.68,0.38)*exp(-r*r*4.5)*uWarm*0.16;
+
+  // a solid, shaded body for the last beats: the planet occludes the sky
+  if(uBody>0.001){
+    float q=r/uBodyR;
+    if(q<1.0){
+      float nz=sqrt(max(0.0,1.0-q*q));
+      vec3 n=normalize(vec3(uv/uBodyR,nz));
+      float lam=clamp(dot(n,normalize(vec3(-0.74,0.46,0.30))),0.0,1.0);
+      float land=fbm2(n.xy*2.6+n.z*1.7+vec2(t*0.01));
+      vec3 bc=uBodyCol*(0.035+0.95*pow(lam,0.95));
+      bc*=0.55+0.85*land;
+      bc+=uBodyCol*0.35*pow(1.0-nz,3.0);           // rim
+      col=mix(col,bc,uBody);
+    }
+  }
+
+  // keep the corners black
+  col *= smoothstep(0.95,0.10,r)*0.92+0.08;
+
+  col *= (1.0-uDark);
+  fragColor=vec4(max(col,0.0),1.0);
+}`;
+
+/* --------------------------------------------------------- particle pass */
+const P_VS = `#version 300 es
+precision highp float;
+layout(location=0) in vec4 aSeed;
+uniform mat4 uView, uProj;
+uniform float uTime,uSize,uInten,uRot,uAspect,uTail,uLit;
+uniform float uW[10];
+uniform vec3 uCol[10];
+out vec3 vCol;
+out float vA;
+
+vec3 sph(float a,float b){
+  float z=a*2.0-1.0;
+  float rr=sqrt(max(0.0,1.0-z*z));
+  float th=b*6.2831853;
+  return vec3(rr*cos(th),z,rr*sin(th));
+}
+float h1(float n){ return fract(sin(n*127.1)*43758.5453); }
+
+vec3 F0(vec3 s,float c,float t){ return sph(s.x,s.y)*0.045*(0.6+c*0.8); }
+
+vec3 F1(vec3 s,float c,float t){
+  vec3 d=sph(s.x,s.y);
+  float clump=0.52+0.82*(0.5+0.5*sin(d.x*3.3+d.y*2.4+d.z*3.7+1.3));
+  float r=(0.34+0.58*pow(c,0.65))*clump;
+  r*=1.0+0.22*sin(t*1.6+d.y*4.0+d.x*3.0);
+  return d*r;
+}
+vec3 F2(vec3 s,float c,float t){
+  vec3 d=sph(s.x,s.y);
+  float cl=0.55+0.75*(0.5+0.5*sin(d.x*3.7+d.y*2.9+d.z*4.3+2.1));
+  cl*=0.90+0.18*sin(d.x*11.0+d.y*8.0+c*6.283);
+  cl+=0.07*sin(d.z*15.0-t*0.4);
+  return d*cl;
+}
+vec3 F3(vec3 s,float c,float t){
+  vec3 d=sph(s.x,s.y);
+  return d*(1.35+3.2*c)+vec3(sin(t*0.05+c*9.0))*.15;
+}
+vec3 F4(vec3 s,float c,float t){
+  // a web of straight filaments strung between random nodes
+  vec3 a=normalize(vec3(sin(s.x*12.3+1.0),cos(s.y*9.1),sin(s.z*15.7)));
+  vec3 b=normalize(vec3(cos(s.x*7.7+2.0),sin(s.y*13.3),cos(s.z*11.1+1.0)));
+  vec3 p=mix(a,b,fract(c*7.31))*1.25;
+  p+=(vec3(h1(c*3.1),h1(c*5.7),h1(c*9.3))-0.5)*0.05;
+  return p;
+}
+vec3 F5(vec3 s,float c,float t){
+  // two-arm spiral with a central bulge
+  float arm=floor(s.y*2.0);
+  float jitter=(fract(s.y*2.0)-0.5)*2.60;
+  float r=pow(s.x,0.62)*1.05;
+  float bulge=step(0.84,fract(s.z*13.7));
+  r=mix(r,r*0.18,bulge);
+  float ang=arm*3.14159265+r*4.4+jitter+t*0.06;
+  float y=(c-0.5)*0.055*(1.0-r*0.55);
+  return vec3(cos(ang)*r,y,sin(ang)*r);
+}
+vec3 F6(vec3 s,float c,float t){
+  return sph(s.x,s.y)*(0.10+0.14*c);
+}
+vec3 F7(vec3 s,float c,float t){
+  float band=floor(pow(s.x,0.65)*8.0)/8.0;      // discrete orbits, differential spin
+  float r=0.30+0.92*band+(h1(c*77.3)-0.5)*0.030;
+  float ang=s.y*6.2831853+t*0.9/pow(max(r,0.12),1.15);
+  return vec3(cos(ang)*r,(c-0.5)*0.035,sin(ang)*r);
+}
+vec3 F8(vec3 s,float c,float t){
+  vec3 d=sph(s.x,s.y);
+  float rr=0.55+0.035*sin(s.x*31.0+t*0.3)+0.02*sin(s.y*23.0);
+  return d*rr;
+}
+vec3 F9(vec3 s,float c,float t){
+  vec3 d=sph(s.x,s.y);
+  return d*(0.085+0.10*c)+vec3(0.0,-0.06,0.0);
+}
+
+mat3 rotY(float a){ float c=cos(a),s=sin(a); return mat3(c,0.0,-s, 0.0,1.0,0.0, s,0.0,c); }
+mat3 rotX(float a){ float c=cos(a),s=sin(a); return mat3(1.0,0.0,0.0, 0.0,c,s, 0.0,-s,c); }
+
+void main(){
+  vec3 s=aSeed.xyz; float c=aSeed.w;
+  float tt=uTime;
+  vec3 p=vec3(0.0);
+  vec3 col=vec3(0.0);
+  float wsum=0.0;
+${Array.from({length:10},(_,i)=>`  p+=uW[${i}]*F${i}(s,c,tt); col+=uW[${i}]*uCol[${i}]; wsum+=uW[${i}];`).join("\n")}
+  float w=max(wsum,1e-4);
+  p/=w; col/=w;
+
+  p=rotY(uRot)*p;
+  p=rotX(0.55)*p;
+
+  vec4 camPos=vec4(p,1.0);
+  gl_Position=uProj*uView*camPos;
+
+  // clumps and voids: the field must read as matter, not as static.
+  // compact formations (near the origin) keep mask ~= 1 so they never vanish.
+  float big=sin(p.x*2.1+p.y*1.7+1.7)*sin(p.z*2.5-p.x*1.2+4.2)*sin(p.y*1.3+p.z*2.9+0.7);
+  float maskPos=smoothstep(-0.35,0.55,big);
+  float ext=clamp(length(p)/1.5,0.0,1.0);
+  float mask=mix(1.0,maskPos,ext);
+
+  float depth=max(0.25,-(uView*camPos).z);
+  float b=pow(c,uTail);               // heavy tail: a few bright sources, much faint dust
+  float ps=uSize*(0.45+0.95*c)*(2.4/depth);
+  gl_PointSize=clamp(ps*uAspect,1.0,22.0);
+
+  // a single raking light so spheres and discs read as bodies, not as discs
+  float lit=clamp(dot(normalize(p+vec3(0.0001)),normalize(vec3(-0.74,0.46,0.30))),0.0,1.0);
+  float shade=mix(1.0,0.04+1.75*pow(lit,0.85),uLit);
+
+  vCol=col;
+  vA=uInten*1.10*(0.10+b*2.4)*clamp(2.2/depth,0.25,1.6)*mix(0.55,1.0,mask)*shade;
+  if(mask<0.05){
+    gl_Position=vec4(3.0,3.0,3.0,1.0);
+    gl_PointSize=1.0;
+    vA=0.0;
+  }
+}`;
+
+const P_FS = `#version 300 es
+precision highp float;
+in vec3 vCol; in float vA; out vec4 fragColor;
+void main(){
+  vec2 q=gl_PointCoord-0.5;
+  float d=length(q)*2.0;
+  if(d>1.0) discard;
+  float halo=exp(-d*d*4.2);
+  float core=smoothstep(0.52,0.0,d);
+  float a=halo*0.34+core*1.45;
+  fragColor=vec4(vCol*vA*a,1.0);
+}`;
+
+/* -------------------------------------------------------------- post fx */
+const FS_VS = `#version 300 es
+in vec2 aPos; out vec2 vUv;
+void main(){ vUv=aPos*0.5+0.5; gl_Position=vec4(aPos,0.0,1.0); }`;
+
+const BRIGHT_FS = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 fragColor;
+uniform sampler2D uTex; uniform float uThresh;
+void main(){
+  vec3 c=texture(uTex,vUv).rgb;
+  float l=dot(c,vec3(0.2126,0.7152,0.0722));
+  float k=smoothstep(uThresh,uThresh+0.55,l);
+  fragColor=vec4(c*k,1.0);
+}`;
+
+const BLUR_FS = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 fragColor;
+uniform sampler2D uTex; uniform vec2 uDir;
+void main(){
+  vec3 s=vec3(0.0); float wsum=0.0;
+  for(int i=-6;i<=6;i++){
+    float fi=float(i);
+    float w=exp(-fi*fi/18.0);
+    s+=texture(uTex,vUv+uDir*fi).rgb*w;
+    wsum+=w;
+  }
+  fragColor=vec4(s/wsum,1.0);
+}`;
+
+const COMP_FS = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 fragColor;
+uniform sampler2D uScene,uBloom;
+uniform float uExpo,uBloomAmt,uTime,uCA,uFade,uGrain;
+float hash(vec2 p){ p=fract(p*vec2(443.897,441.423)); p+=dot(p,p+19.19); return fract(p.x*p.y); }
+void main(){
+  vec2 uv=vUv; vec2 d=uv-0.5;
+  float r2=dot(d,d);
+  vec2 off=d*uCA*0.0022;
+  vec3 c;
+  c.r=texture(uScene,uv+off).r;
+  c.g=texture(uScene,uv).g;
+  c.b=texture(uScene,uv-off).b;
+  vec3 b;
+  b.r=texture(uBloom,uv+off*2.2).r;
+  b.g=texture(uBloom,uv).g;
+  b.b=texture(uBloom,uv-off*2.2).b;
+  c+=b*uBloomAmt;
+
+  c*=uExpo;
+  c=(c*(2.51*c+0.03))/(c*(2.43*c+0.59)+0.14);
+  c=pow(clamp(c,0.0,1.0),vec3(0.4545));
+
+  // deepen the blacks; the frame must read as vacuum, not fog
+  c=max(c-0.035,0.0)*1.036;
+
+  // colour grade: hold saturation so the epoch palette survives the tonemap
+  float l=dot(c,vec3(0.2126,0.7152,0.0722));
+  c=mix(vec3(l),c,1.42);
+  c+=vec3(0.010,0.016,0.030)*(1.0-l);   // cool shadows
+  c+=vec3(0.020,0.008,-0.004)*l*l;      // warm highlights
+  c=max(c,0.0);
+
+  float vig=smoothstep(1.30,0.10,sqrt(r2)*1.55);
+  c*=mix(0.34,1.0,vig);
+
+  float g=hash(uv*vec2(1920.0,1080.0)+fract(uTime)*137.0);
+  c+=(g-0.5)*uGrain;
+
+  c*=uFade;
+  fragColor=vec4(c,1.0);
+}`;
+
+/* ------------------------------------------------------------- programs */
+const bgProg   = program(BG_VS, BG_FS);
+const pProg    = program(P_VS, P_FS);
+const brProg   = program(FS_VS, BRIGHT_FS);
+const blProg   = program(FS_VS, BLUR_FS);
+const compProg = program(FS_VS, COMP_FS);
+
+/* clip-space quad */
+const quadVao = gl.createVertexArray();
+gl.bindVertexArray(quadVao);
+const quadBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+gl.bindVertexArray(null);
+
+/* particles */
+const N = 24000;
+const seeds = new Float32Array(N*4);
+for(let i=0;i<N*4;i++) seeds[i]=Math.random();
+const pVao = gl.createVertexArray();
+gl.bindVertexArray(pVao);
+const pBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, pBuf);
+gl.bufferData(gl.ARRAY_BUFFER, seeds, gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0,4,gl.FLOAT,false,0,0);
+gl.bindVertexArray(null);
+
+/* --------------------------------------------------------------- sizes */
+let W=1,H=1,DPR=1;
+let scene=null, bloomA=null, bloomB=null;
+function allocTargets(w,h){
+  if(scene) gl.deleteTexture(scene.tex), gl.deleteFramebuffer(scene.fb);
+  if(bloomA) gl.deleteTexture(bloomA.tex), gl.deleteFramebuffer(bloomA.fb);
+  if(bloomB) gl.deleteTexture(bloomB.tex), gl.deleteFramebuffer(bloomB.fb);
+  scene=target(w,h);
+  const bw=Math.max(2,w>>1), bh=Math.max(2,h>>1);
+  bloomA=target(bw,bh);
+  bloomB=target(bw,bh);
+}
+function resize(){
+  DPR=Math.min(window.devicePixelRatio||1,1.5);
+  const w=Math.floor(innerWidth*DPR), h=Math.floor(innerHeight*DPR);
+  if(w===W&&h===H) return;
+  W=w;H=h;
+  canvas.width=W;canvas.height=H;
+  canvas.style.width=innerWidth+"px";canvas.style.height=innerHeight+"px";
+  allocTargets(W,H);
+}
+addEventListener("resize",resize);
+
+/* ------------------------------------------------------------- matrices */
+function perspective(fovy,aspect,near,far){
+  const f=1/Math.tan(fovy/2);
+  return new Float32Array([f/aspect,0,0,0, 0,f,0,0, 0,0,(far+near)/(near-far),-1, 0,0,(2*far*near)/(near-far),0]);
+}
+function lookAtZ(z,y){
+  // camera at (0,0,z) looking at origin
+  const d=Math.hypot(z,y);
+  return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,-d, 0,0,0,1]);
+}
+function translateView(z,y,x){
+  // camera sits at (x,y,z) looking down -z; the world is translated by -(x,y,z)
+  return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, -x,-y,-z,1]);
+}
+
+/* ------------------------------------------------------------ rendering */
+function drawQuad(){
+  gl.bindVertexArray(quadVao);
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+  gl.bindVertexArray(null);
+}
+
+function render(p, time, fade){
+  const st = sampleState(p);
+
+  /* --- scene --- */
+  gl.bindFramebuffer(gl.FRAMEBUFFER, scene.fb);
+  gl.viewport(0,0,scene.w,scene.h);
+  gl.clearColor(0,0,0,1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.disable(gl.BLEND);
+
+  gl.useProgram(bgProg.p);
+  gl.uniform2f(bgProg.u.uRes, scene.w, scene.h);
+  gl.uniform1f(bgProg.u.uTime, time);
+  gl.uniform1f(bgProg.u.uP, p);
+  gl.uniform1f(bgProg.u.uDens, st.dens);
+  gl.uniform1f(bgProg.u.uTurb, st.turb);
+  gl.uniform1f(bgProg.u.uStar, st.star);
+  gl.uniform1f(bgProg.u.uCore, st.core);
+  gl.uniform1f(bgProg.u.uGlow, st.glow);
+  gl.uniform1f(bgProg.u.uShellR, st.shellR);
+  gl.uniform1f(bgProg.u.uShellI, st.shellI);
+  gl.uniform1f(bgProg.u.uWarm, st.warm);
+  gl.uniform1f(bgProg.u.uDark, st.dark);
+  const bodyR = 0.5*(0.55/(st.camZ*1.55))/Math.tan(0.51);
+  gl.uniform1f(bgProg.u.uBodyR, bodyR);
+  gl.uniform1f(bgProg.u.uBody, st.body);
+  gl.uniform3f(bgProg.u.uBodyCol, st.bodyCol[0], st.bodyCol[1], st.bodyCol[2]);
+  gl.uniform3f(bgProg.u.uTint, st.tint[0], st.tint[1], st.tint[2]);
+  drawQuad();
+
+  /* --- particles --- */
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  gl.useProgram(pProg.p);
+  const aspect = scene.w/scene.h;
+  const proj = perspective(1.02, aspect, 0.1, 60);
+  const camZ = st.camZ*1.55 + Math.sin(time*0.23)*0.06;
+  const camY = st.camY + state.my*0.10;
+  const camX = state.mx*0.16;
+  const view = translateView(camZ, camY, camX);
+  gl.uniformMatrix4fv(pProg.u.uProj,false,proj);
+  gl.uniformMatrix4fv(pProg.u.uView,false,view);
+  gl.uniform1f(pProg.u.uTime, time + st.rot*10.0);
+  gl.uniform1f(pProg.u.uSize, st.size);
+  gl.uniform1f(pProg.u.uInten, st.inten);
+  gl.uniform1f(pProg.u.uTail, st.tail);
+  gl.uniform1f(pProg.u.uLit, st.lit);
+  gl.uniform1f(pProg.u.uRot, st.rot + time*0.02);
+  gl.uniform1f(pProg.u.uAspect, DPR);
+  gl.uniform1fv(pProg.u.uW, new Float32Array(st.form));
+  const cols=new Float32Array(30);
+  const base=[
+    [1.30,1.26,1.18],[1.15,0.78,0.60],[1.20,1.00,0.74],[0.30,0.38,0.62],
+    [0.42,0.54,0.98],[0.80,0.78,0.74],[0.60,0.70,1.20],[0.85,0.70,0.50],
+    [0.30,0.62,0.80],[0.95,0.76,0.56]
+  ];
+  for(let i=0;i<10;i++){ cols[i*3]=base[i][0]; cols[i*3+1]=base[i][1]; cols[i*3+2]=base[i][2]; }
+  gl.uniform3fv(pProg.u.uCol, cols);
+  gl.bindVertexArray(pVao);
+  gl.drawArrays(gl.POINTS,0,N);
+  gl.bindVertexArray(null);
+  gl.disable(gl.BLEND);
+
+  /* --- bloom --- */
+  gl.bindFramebuffer(gl.FRAMEBUFFER, bloomA.fb);
+  gl.viewport(0,0,bloomA.w,bloomA.h);
+  gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.useProgram(brProg.p);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, scene.tex);
+  gl.uniform1i(brProg.u.uTex,0);
+  gl.uniform1f(brProg.u.uThresh, 0.75);
+  drawQuad();
+
+  let src=bloomA, dst=bloomB;
+  for(let i=0;i<3;i++){
+    const radius=(1.0+i*1.6);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb);
+    gl.viewport(0,0,dst.w,dst.h);
+    gl.useProgram(blProg.p);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src.tex);
+    gl.uniform1i(blProg.u.uTex,0);
+    gl.uniform2f(blProg.u.uDir, radius/src.w, 0);
+    drawQuad();
+    [src,dst]=[dst,src];
+    gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb);
+    gl.viewport(0,0,dst.w,dst.h);
+    gl.useProgram(blProg.p);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src.tex);
+    gl.uniform1i(blProg.u.uTex,0);
+    gl.uniform2f(blProg.u.uDir, 0, radius/src.h);
+    drawQuad();
+    [src,dst]=[dst,src];
+  }
+  const bloomTex=src.tex;
+
+  /* --- composite --- */
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  gl.viewport(0,0,W,H);
+  gl.useProgram(compProg.p);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, scene.tex);
+  gl.uniform1i(compProg.u.uScene,0);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, bloomTex);
+  gl.uniform1i(compProg.u.uBloom,1);
+  gl.uniform1f(compProg.u.uExpo, st.expo);
+  gl.uniform1f(compProg.u.uBloomAmt, st.bloom);
+  gl.uniform1f(compProg.u.uTime, time);
+  gl.uniform1f(compProg.u.uCA, st.ca);
+  gl.uniform1f(compProg.u.uFade, fade);
+  gl.uniform1f(compProg.u.uGrain, 0.024);
+  drawQuad();
+  gl.activeTexture(gl.TEXTURE0);
+}
+
+/* ================================= AUDIO ================================= */
+class Score{
+  constructor(ctx){
+    this.ctx=ctx;
+    this.on=false;
+    this.master=ctx.createGain(); this.master.gain.value=0.0;
+    const comp=ctx.createDynamicsCompressor();
+    comp.threshold.value=-22; comp.knee.value=20; comp.ratio.value=6;
+    this.master.connect(comp); comp.connect(ctx.destination);
+
+    this.droneGain=ctx.createGain(); this.droneGain.gain.value=0.0;
+    this.filter=ctx.createBiquadFilter();
+    this.filter.type="lowpass"; this.filter.frequency.value=220; this.filter.Q.value=3.5;
+    this.droneGain.connect(this.filter); this.filter.connect(this.master);
+
+    this.oscs=[];
+    [55,82.5,110,164.8].forEach((f,i)=>{
+      const o=ctx.createOscillator(); o.type= i%2? "triangle":"sine";
+      o.frequency.value=f; o.detune.value=(i-1.5)*7;
+      const g=ctx.createGain(); g.gain.value=[0.30,0.16,0.12,0.05][i];
+      o.connect(g); g.connect(this.droneGain); o.start();
+      this.oscs.push({o,g,base:f});
+    });
+
+    // air
+    const len=ctx.sampleRate*3;
+    const buf=ctx.createBuffer(1,len,ctx.sampleRate);
+    const d=buf.getChannelData(0);
+    for(let i=0;i<len;i++) d[i]=Math.random()*2-1;
+    this.noise=ctx.createBufferSource(); this.noise.buffer=buf; this.noise.loop=true;
+    this.nf=ctx.createBiquadFilter(); this.nf.type="bandpass"; this.nf.frequency.value=600; this.nf.Q.value=0.8;
+    this.ng=ctx.createGain(); this.ng.gain.value=0.0;
+    this.noise.connect(this.nf); this.nf.connect(this.ng); this.ng.connect(this.master);
+    this.noise.start();
+    this.events={};
+  }
+  start(){
+    const t=this.ctx.currentTime;
+    this.master.gain.cancelScheduledValues(t);
+    this.master.gain.setValueAtTime(0.0001,t);
+    this.master.gain.exponentialRampToValueAtTime(0.34,t+6);
+    this.droneGain.gain.setValueAtTime(0.0001,t);
+    this.droneGain.gain.exponentialRampToValueAtTime(0.55,t+8);
+    this.on=true;
+  }
+  update(p, dark, energy){
+    if(!this.on) return;
+    const t=this.ctx.currentTime;
+    const f0=55*(1.0+p*0.18);
+    this.oscs.forEach((v,i)=>{ v.o.frequency.setTargetAtTime(v.base*(1.0+p*0.10),t,0.6); });
+    const cut=140+(1.0-dark)*1800*(0.4+energy*0.9);
+    this.filter.frequency.setTargetAtTime(cut,t,0.8);
+    this.nf.frequency.setTargetAtTime(300+energy*2200,t,1.0);
+    this.ng.gain.setTargetAtTime(0.02+(1.0-dark)*0.10*energy,t,1.2);
+    this.droneGain.gain.setTargetAtTime(0.55*(1.0-dark*0.80),t,1.5);
+  }
+  once(key, fn){ if(!this.events[key]){ this.events[key]=true; fn(); } }
+  boom(){
+    if(!this.on) return; const c=this.ctx,t=c.currentTime;
+    const o=c.createOscillator(), g=c.createGain();
+    o.type="sine"; o.frequency.setValueAtTime(90,t);
+    o.frequency.exponentialRampToValueAtTime(24,t+3.2);
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(0.55,t+0.08);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+4.2);
+    o.connect(g); g.connect(this.master); o.start(t); o.stop(t+4.4);
+  }
+  shimmer(){
+    if(!this.on) return; const c=this.ctx,t=c.currentTime;
+    const g=c.createGain(); g.gain.value=0; g.connect(this.master);
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(0.09,t+2.5);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+9);
+    [523.25,784,1046.5,1318.5,2093].forEach((f,i)=>{
+      const o=c.createOscillator(), og=c.createGain();
+      o.type="sine"; o.frequency.value=f; o.detune.value=(Math.random()-0.5)*12;
+      og.gain.value=0.35/(i+1);
+      o.connect(og); og.connect(g); o.start(t); o.stop(t+9.5);
+    });
+  }
+  bell(){
+    if(!this.on) return; const c=this.ctx,t=c.currentTime;
+    [660,990].forEach((f,i)=>{
+      const o=c.createOscillator(), g=c.createGain();
+      o.type="sine"; o.frequency.value=f;
+      g.gain.setValueAtTime(0.0001,t+i*0.12);
+      g.gain.exponentialRampToValueAtTime(0.12/(i+1),t+i*0.12+0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001,t+i*0.12+6);
+      o.connect(g); g.connect(this.master); o.start(t); o.stop(t+6.2);
+    });
+  }
+  chord(){
+    if(!this.on) return; const c=this.ctx,t=c.currentTime;
+    const g=c.createGain(); g.connect(this.master);
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(0.16,t+3.0);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+14);
+    [261.6,329.6,392.0,523.25,659.3,784].forEach((f,i)=>{
+      const o=c.createOscillator(), og=c.createGain();
+      o.type="sine"; o.frequency.value=f; o.detune.value=(i-2)*3;
+      og.gain.value=0.22/(1+i*0.35);
+      o.connect(og); og.connect(g); o.start(t); o.stop(t+14.5);
+    });
+  }
+  mute(v){
+    if(!this.on) return;
+    const t=this.ctx.currentTime;
+    this.master.gain.setTargetAtTime(v?0.0001:0.34,t,0.3);
+  }
+}
+
+let score=null;
+function initAudio(){
+  try{
+    const AC=window.AudioContext||window.webkitAudioContext;
+    if(!AC) return;
+    score=new Score(new AC());
+    score.start();
+  }catch(e){ console.warn("audio unavailable", e); }
+}
+
+/* ================================== UI =================================== */
+const rail=$("#rail"), railFill=$("#railFill"), head=$("#head"), railLabels=$("#railLabels");
+let dragging=false;
+
+BEATS.forEach((b,i)=>{
+  const tick=document.createElement("div");
+  tick.className="tick"+(i%3===0?" major":"");
+  tick.style.left=(b.p*100)+"%";
+  rail.appendChild(tick);
+});
+const LBL=[[0,"起源"],[4,"元素"],[6,"再結合"],[7,"暗黒"],[10,"銀河"],[12,"太陽系"],[16,"いま"]];
+LBL.forEach(([i,label],k)=>{
+  const s=document.createElement("span");
+  s.textContent=label;
+  if(k===0){ s.style.left="0"; s.style.transform="translateX(0)"; }
+  else if(k===LBL.length-1){ s.style.right="0"; s.style.left="auto"; s.style.transform="translateX(0)"; }
+  else { s.style.left=(BEATS[i].p*100)+"%"; }
+  railLabels.appendChild(s);
+});
+
+const SUP={"-":"⁻","0":"⁰","1":"¹","2":"²","3":"³","4":"⁴","5":"⁵","6":"⁶","7":"⁷","8":"⁸","9":"⁹"};
+const sup = n => String(n).split("").map(c=>SUP[c]||c).join("");
+
+function formatCosmicTime(tsec){
+  if(tsec < 1){
+    const e = Math.round(Math.log10(tsec));
+    const m = Math.pow(10,e);
+    if(Math.abs(tsec-m)/m < 0.12) return {v:"10"+sup(e), u:"秒"};
+    return {v:(tsec/m).toFixed(1)+"×10"+sup(e), u:"秒"};
+  }
+  if(tsec < 90) return {v:tsec.toFixed(0), u:"秒"};
+  if(tsec < 5400) return {v:(tsec/60).toFixed(0), u:"分"};
+  if(tsec < 172800) return {v:(tsec/3600).toFixed(0), u:"時間"};
+  if(tsec < 3.156e7) return {v:(tsec/86400).toFixed(0), u:"日"};
+  const yr = tsec/3.156e7;
+  if(yr < 1e4) return {v:Math.round(yr).toLocaleString("en-US"), u:"年"};
+  if(yr < 1e8) return {v:Math.round(yr/1e4).toLocaleString("en-US"), u:"万年"};
+  return {v:(yr/1e8).toFixed(2), u:"億年"};
+}
+
+function setHud(b, p){
+  const ja=$("#epochJa"), en=$("#epochEn");
+  if(ja.textContent!==b.ja) ja.textContent=b.ja;
+  if(en.textContent!==b.en) en.textContent=b.en;
+  const t=formatCosmicTime(b.tsec);
+  $("#tVal").textContent=t.v;
+  $("#tUnit").textContent=t.u;
+  $("#temp").textContent=b.temp;
+  $("#zval").textContent="z = "+(b.z==="0"?"0":b.z);
+}
+
+let curLine="", curSub="";
+function setLine(b, alpha){
+  const m=$("#lineMain"), s=$("#lineSub");
+  if(curLine!==b.line){ curLine=b.line; m.textContent=b.line; }
+  if(curSub!==b.sub){ curSub=b.sub; s.textContent=b.sub; }
+  m.style.opacity=alpha.toFixed(3);
+  s.style.opacity=(alpha*0.9).toFixed(3);
+}
+
+/* ================================= MAIN ================================== */
+let lastT=performance.now();
+let clock=0;            // wall-clock in the film
+let paused=false;
+let fade=1;
+
+resize();
+document.body.classList.add("ready");
+setTimeout(()=>{ $("#veil").classList.add("gone"); }, 60);
+setTimeout(()=>{ $("#veil").classList.add("done"); }, 2800);
+requestAnimationFrame(frame);
+
+function frame(now){
+  requestAnimationFrame(frame);
+  const dt=Math.min(0.05,(now-lastT)/1000);
+  lastT=now;
+
+  // parallax easing
+  state.mx=lerp(state.mx,state.mouse.x,0.045);
+  state.my=lerp(state.my,state.mouse.y,0.045);
+
+  if(state.started && !paused && !state.ended){
+    clock=Math.min(TOTAL,clock+dt);
+    state.progress=scheduleToProgress(clock);
+    if(clock>=TOTAL-0.001){
+      if(!state.ended){ state.ended=true; onEnd(); }
+    }
+  }
+
+  const p=state.progress;
+  const st=sampleState(p);
+
+  // audio scoring
+  if(score){
+    score.update(p, st.dark, clamp(st.star*0.5+st.dens*0.5,0,1));
+    if(p>=0.050) score.once("infl",()=>score.boom());
+    if(p>=0.320) score.once("rec",()=>score.shimmer());
+    if(p>=0.480) score.once("dawn",()=>score.bell());
+    if(p>=0.985) score.once("now",()=>score.chord());
+  }
+
+  render(p, clock, fade);
+
+  // HUD
+  const bi=beatIndexAt(p);
+  if(bi!==state.lastBeat){
+    state.lastBeat=bi;
+    setHud(BEATS[bi],p);
+  }
+  const b0=BEATS[bi], b1=BEATS[Math.min(bi+1,BEATS.length-1)];
+  let a=1;
+  if(bi>0) a=clamp((p-b0.p)/0.004,0,1);
+  const nxt=b1.p;
+  a*=1-clamp((p-(nxt-0.008))/0.006,0,1);
+  if(bi===BEATS.length-1) a=clamp((p-(b0.p-0.02))/0.012,0,1);
+  setLine(b0,a);
+
+  railFill.style.width=(p*100)+"%";
+  head.style.left=(p*100)+"%";
+}
+
+/* --------------------------------------------------------- interactions */
+canvas.addEventListener("pointermove",e=>{
+  state.mouse.x=(e.clientX/innerWidth-0.5)*2;
+  state.mouse.y=-((e.clientY/innerHeight-0.5)*2);
+});
+
+function setProgressFromEvent(e){
+  const r=rail.getBoundingClientRect();
+  const x=clamp((e.clientX-r.left)/r.width,0,1);
+  state.progress=clamp(x,0,1);
+  clock=progressToSchedule(state.progress);
+  state.ended=false;
+  $("#end").classList.remove("on");
+  state.lastBeat=-1;
+}
+
+rail.addEventListener("pointerdown",e=>{
+  dragging=true;
+  try{ rail.setPointerCapture(e.pointerId); }catch(_){}
+  setProgressFromEvent(e);
+});
+rail.addEventListener("pointermove",e=>{ if(dragging) setProgressFromEvent(e); });
+rail.addEventListener("pointerup",e=>{ dragging=false; });
+
+addEventListener("keydown",e=>{
+  if(!state.started) return;
+  if(e.code==="Space"){ e.preventDefault(); paused=!paused; document.body.classList.toggle("paused",paused); }
+  if(e.code==="KeyM"){ state.muted=!state.muted; if(score) score.mute(state.muted); }
+  if(e.code==="ArrowRight"){ clock=Math.min(TOTAL,clock+4); state.progress=scheduleToProgress(clock); }
+  if(e.code==="ArrowLeft"){ clock=Math.max(0,clock-4); state.progress=scheduleToProgress(clock); state.ended=false; }
+});
+
+$("#begin").addEventListener("click",()=>{
+  state.started=true;
+  clock=0; state.progress=0; state.lastBeat=-1;
+  initAudio();
+  $("#gate").classList.add("out");
+  setTimeout(()=>$("#gate").remove(),1900);
+  $("#veil").classList.add("gone");
+  $("#hud").classList.add("on");
+  $("#railWrap").classList.add("on");
+  $("#hint").classList.add("on");
+  setTimeout(()=>$("#hint").classList.remove("on"),9000);
+});
+
+$("#replay").addEventListener("click",()=>{
+  clock=0; state.progress=0; state.ended=false; state.lastBeat=-1; paused=false;
+  $("#end").classList.remove("on");
+  state.muted=false;
+  if(score){ score.events={}; score.mute(false); } else { initAudio(); }
+});
+
+function onEnd(){
+  setTimeout(()=>$("#end").classList.add("on"), 2600);
+}
+
+/* debug hooks (used while authoring) */
+window.__start = ()=>{
+  const g=$("#gate"); if(g){ g.classList.add("out"); setTimeout(()=>g.remove(),400); }
+  $("#veil").classList.add("gone","done");
+  $("#hud").classList.add("on");
+  $("#railWrap").classList.add("on");
+  state.started=true;
+};
+window.__dbg = ()=>sampleState(state.progress);
+window.__audioState = ()=> score ? score.ctx.state : 'none';
+window.__clock = ()=> ({clock, prog:state.progress, started:state.started, paused});
+window.__seek = p=>{
+  paused=true;
+  state.progress=clamp(p,0,1);
+  clock=progressToSchedule(state.progress);
+  state.lastBeat=-1;
+  state.ended=false;
+  $("#end").classList.remove("on");
+};
+</script>
+</body>
+</html>
