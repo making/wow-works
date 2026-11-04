@@ -1,0 +1,1464 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>余白 — YOHAKU</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23f1ebde'/%3E%3Ccircle cx='16' cy='16' r='8.5' fill='none' stroke='%23101214' stroke-width='4.5' stroke-dasharray='46 8'/%3E%3C/svg%3E">
+<style>
+  :root { color-scheme: dark; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { width:100%; height:100%; overflow:hidden; background:#08080a; }
+  body { font-family:"Hiragino Mincho ProN","Yu Mincho","YuMincho","Noto Serif JP",serif;
+         -webkit-font-smoothing:antialiased; cursor:none; }
+  canvas { position:fixed; inset:0; width:100%; height:100%; display:block; }
+
+  #intro {
+    position:fixed; inset:0; z-index:10;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background:#08080a; color:#cfc6b4; cursor:pointer;
+    transition:opacity 2.4s ease, visibility 0s linear 2.4s;
+  }
+  #intro.gone { opacity:0; visibility:hidden; }
+  #intro .title {
+    font-size:clamp(56px,11vw,150px); letter-spacing:.32em; margin-right:-.32em;
+    font-weight:400; line-height:1; color:#e6dcc8;
+    animation:breathe 7s ease-in-out infinite;
+  }
+  #intro .sub {
+    margin-top:2.6rem; font-size:clamp(10px,1.05vw,13px); letter-spacing:.62em;
+    margin-right:-.62em; color:#7d7568; text-transform:uppercase;
+    font-family:"Helvetica Neue",Arial,sans-serif;
+    animation:fadeIn 3s ease 1.2s both;
+  }
+  #intro .enter {
+    margin-top:4.5rem; font-size:clamp(10px,1vw,12px); letter-spacing:.44em;
+    margin-right:-.44em; color:#a89c86; animation:fadeIn 3s ease 2.6s both;
+  }
+  #intro .enter::after { content:""; display:block; width:1px; height:44px; margin:1.6rem auto 0;
+    background:linear-gradient(#a89c86,rgba(168,156,134,0)); animation:drop 3.4s ease-in-out infinite; }
+  @keyframes breathe { 0%,100%{opacity:.86} 50%{opacity:1} }
+  @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+  @keyframes drop { 0%,100%{transform:scaleY(.35);transform-origin:top;opacity:.3} 50%{transform:scaleY(1);opacity:1} }
+
+  #hint {
+    position:fixed; left:50%; bottom:3.2vh; transform:translateX(-50%);
+    font-family:"Helvetica Neue",Arial,sans-serif;
+    font-size:10px; letter-spacing:.42em; color:#6f665a; text-transform:uppercase;
+    opacity:0; transition:opacity 2.5s ease; pointer-events:none; z-index:5;
+    margin-right:-.42em; white-space:nowrap;
+  }
+  #hint.on { opacity:1; }
+
+  #fps { position:fixed; left:8px; bottom:6px; font:10px/1 monospace; color:#33302b; z-index:6;
+         opacity:0; pointer-events:none; }
+
+  #err { position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+         background:#08080a; color:#c8bfae; font-family:monospace; font-size:13px; text-align:center;
+         padding:2rem; line-height:1.8; z-index:20; }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="hint">move to paint &nbsp;·&nbsp; click to drop ink</div>
+<div id="fps"></div>
+<div id="err"></div>
+
+<div id="intro">
+  <div class="title">余白</div>
+  <div class="sub">a ritual in ink</div>
+  <div class="enter">click to begin</div>
+</div>
+
+<script>
+"use strict";
+/* =========================================================================
+   余白 / YOHAKU — an ink ritual
+   Real-time GPU fluid ink, procedural washi, sumi-e brush dynamics, a poem,
+   and a synthesiser. No assets, no libraries.
+   ========================================================================= */
+
+const $ = id => document.getElementById(id);
+const canvas = $('gl');
+const hintEl = $('hint');
+const errEl  = $('err');
+
+function fail(msg){
+  errEl.style.display = 'flex';
+  errEl.innerHTML = msg;
+  throw new Error(msg);
+}
+
+const gl = canvas.getContext('webgl2', {
+  alpha:false, antialias:false, depth:false, stencil:false,
+  powerPreference:'high-performance', preserveDrawingBuffer:false
+});
+if (!gl) fail('This piece needs WebGL2. Try a recent Chrome, Safari or Firefox.');
+gl.getExtension('EXT_color_buffer_float');
+gl.getExtension('OES_texture_float_linear');
+
+const MAXTEX = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+const DPR = Math.max(1, Math.min(window.devicePixelRatio || 1, 2, 2800 / Math.max(1, window.innerWidth)));
+
+/* ------------------------------------------------------------------ math */
+const clamp = (v,a,b)=> v<a?a:v>b?b:v;
+const lerp  = (a,b,t)=> a+(b-a)*t;
+const smooth=(t)=> t*t*(3-2*t);
+const easeIO= t=> t<0.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2;
+const easeOut= t=> 1-Math.pow(1-t,3);
+const rnd = (a=1,b=0)=> b + Math.random()*(a-b);
+
+/* ------------------------------------------------------------ gl helpers */
+const QUAD = new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]);
+const quadBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+gl.bufferData(gl.ARRAY_BUFFER, QUAD, gl.STATIC_DRAW);
+const vao = gl.createVertexArray();
+gl.bindVertexArray(vao);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+const VS = `#version 300 es
+precision highp float;
+layout(location=0) in vec2 aPos;
+out vec2 vUv;
+void main(){ vUv = aPos*0.5 + 0.5; gl_Position = vec4(aPos,0.0,1.0); }`;
+
+function sh(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    const log = gl.getShaderInfoLog(s);
+    console.error(src.split('\n').map((l,i)=>(i+1)+': '+l).join('\n'));
+    fail('Shader error:<br>' + log);
+  }
+  return s;
+}
+
+class Prog {
+  constructor(fs){
+    const p = gl.createProgram();
+    gl.attachShader(p, sh(gl.VERTEX_SHADER, VS));
+    gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs));
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) fail('Link error:<br>' + gl.getProgramInfoLog(p));
+    this.p = p; this.u = {};
+  }
+  use(){ gl.useProgram(this.p); return this; }
+  loc(n){
+    if (!(n in this.u)) this.u[n] = gl.getUniformLocation(this.p, n);
+    return this.u[n];
+  }
+  set(n, ...v){
+    const l = this.loc(n); if (l === null) return this;
+    if (v.length === 1) {
+      const x = v[0];
+      if (typeof x === 'number') gl.uniform1f(l, x);
+      else if (x && x.length === 2) gl.uniform2f(l, x[0], x[1]);
+      else if (x && x.length === 3) gl.uniform3f(l, x[0], x[1], x[2]);
+      else if (x && x.length === 4) gl.uniform4f(l, x[0], x[1], x[2], x[3]);
+    } else if (v.length === 2) gl.uniform2f(l, v[0], v[1]);
+    else if (v.length === 3) gl.uniform3f(l, v[0], v[1], v[2]);
+    else if (v.length === 4) gl.uniform4f(l, v[0], v[1], v[2], v[3]);
+    return this;
+  }
+  tex(n, t, unit){
+    gl.activeTexture(gl.TEXTURE0 + unit);
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.uniform1i(this.loc(n), unit);
+    return this;
+  }
+}
+
+function drawTo(fbo){
+  if (fbo) { gl.bindFramebuffer(gl.FRAMEBUFFER, fbo.fbo); gl.viewport(0,0,fbo.w,fbo.h); }
+  else     { gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0,0,canvas.width,canvas.height); }
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+}
+
+const HDR = { internal: gl.RGBA16F, format: gl.RGBA, type: gl.HALF_FLOAT };
+
+function makeTex(w,h,filter){
+  const t = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, HDR.internal, w, h, 0, HDR.format, HDR.type, null);
+  return t;
+}
+
+function makeFBO(w,h,filter=gl.LINEAR){
+  const tex = makeTex(w,h,filter);
+  const fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.viewport(0,0,w,h);
+  gl.clearColor(0,0,0,0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  return { tex, fbo, w, h, tx:1/w, ty:1/h };
+}
+
+function makeDouble(w,h,filter=gl.LINEAR){
+  let a = makeFBO(w,h,filter), b = makeFBO(w,h,filter);
+  return {
+    w,h, read:a, write:b,
+    swap(){ const t=a; a=b; b=t; this.read=a; this.write=b; }
+  };
+}
+
+function destroyFBO(f){ if(!f) return; gl.deleteTexture(f.tex); gl.deleteFramebuffer(f.fbo); }
+function destroyDouble(d){ if(!d) return; destroyFBO(d.read); destroyFBO(d.write); }
+
+/* ================================================================ SHADERS */
+
+const SH = {};
+
+/* --- ink deposit with a bristle stamp ------------------------------- */
+SH.splat = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 o;
+uniform sampler2D uTarget;
+uniform vec2  uPoint;
+uniform vec2  uDir;
+uniform float uRadius;
+uniform float uAspect;
+uniform float uAlpha;
+uniform float uWet;
+uniform float uBristle;
+uniform float uSeed;
+uniform vec3  uColor;
+
+float hash21(vec2 p){
+  p = fract(p*vec2(123.34,456.21));
+  p += dot(p, p+45.32);
+  return fract(p.x*p.y);
+}
+float vnoise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  f = f*f*(3.0-2.0*f);
+  float a = hash21(i), b = hash21(i+vec2(1.0,0.0));
+  float c = hash21(i+vec2(0.0,1.0)), d = hash21(i+vec2(1.0,1.0));
+  return mix(mix(a,b,f.x), mix(c,d,f.x), f.y);
+}
+
+void main(){
+  vec4 base = texture(uTarget, vUv);
+  vec2 d = vUv - uPoint;
+  d.x *= uAspect;
+  float l = length(d);
+  if (l > uRadius*2.3) { o = base; return; }
+
+  vec2 t = normalize(uDir*uAspect + vec2(1e-5));
+  vec2 n = vec2(-t.y, t.x);
+  float across = dot(d, n);
+  float along  = dot(d, t);
+  float ang = atan(d.y, d.x);
+
+  /* hairs tear the edge of the mark; a brush is never a circle */
+  float ragged = 1.0 + 0.050*sin(ang*5.0 + uSeed*4.0)
+                     + 0.028*sin(ang*11.0 - uSeed*7.0)
+                     + 0.015*sin(ang*23.0 + uSeed*3.0);
+  float rr = max(uRadius*ragged, 0.0008);
+  float edge = 1.0 - smoothstep(rr*0.80, rr, l);
+
+  float u = across/rr;
+  float v = along/rr;
+
+  /* each hair carries its own load; dry passages leave the paper showing */
+  float hair = vnoise(vec2(u*5.0 + uSeed*31.0, v*0.65 + uSeed*5.0));
+  hair = smoothstep(0.32, 0.74, hair);
+  float grain = 0.58 + 0.42*vnoise(vec2(u*13.0 + uSeed*7.0, v*1.8));
+  float dry = clamp(uBristle, 0.0, 1.0);
+  float mask = mix(grain, hair, 0.12 + 0.88*dry);
+  float a = edge * mix(1.0, mask, 0.22 + 0.72*dry) * uAlpha;
+
+  o = vec4(base.rgb + uColor*a, max(base.a, a*uWet));
+}`;
+
+/* --- velocity injection -------------------------------------------- */
+SH.vel = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 o;
+uniform sampler2D uTarget;
+uniform vec2 uPoint;
+uniform float uRadius;
+uniform float uAspect;
+uniform vec2 uForce;
+void main(){
+  vec4 base = texture(uTarget, vUv);
+  vec2 d = vUv - uPoint;
+  d.x *= uAspect;
+  float m = exp(-dot(d,d)/(uRadius*uRadius));
+  o = vec4(base.xy + uForce*m, 0.0, 1.0);
+}`;
+
+/* --- fluid steps ---------------------------------------------------- */
+SH.advect = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 o;
+uniform sampler2D uVel, uSrc;
+uniform vec2 uTexel;
+uniform float uDt, uDiss;
+void main(){
+  vec2 v = texture(uVel, vUv).xy;
+  vec2 c = vUv - uDt * v * uTexel;
+  o = uDiss * texture(uSrc, c);
+}`;
+
+SH.curl = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 o;
+uniform sampler2D uVel; uniform vec2 uTexel;
+void main(){
+  float L = texture(uVel, vUv - vec2(uTexel.x,0.0)).y;
+  float R = texture(uVel, vUv + vec2(uTexel.x,0.0)).y;
+  float B = texture(uVel, vUv - vec2(0.0,uTexel.y)).x;
+  float T = texture(uVel, vUv + vec2(0.0,uTexel.y)).x;
+  o = vec4(0.5*(R - L - T + B), 0.0, 0.0, 1.0);
+}`;
+
+SH.vort = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 o;
+uniform sampler2D uVel, uCurl; uniform vec2 uTexel;
+uniform float uStrength, uDt;
+void main(){
+  float L = texture(uCurl, vUv - vec2(uTexel.x,0.0)).x;
+  float R = texture(uCurl, vUv + vec2(uTexel.x,0.0)).x;
+  float B = texture(uCurl, vUv - vec2(0.0,uTexel.y)).x;
+  float T = texture(uCurl, vUv + vec2(0.0,uTexel.y)).x;
+  float C = texture(uCurl, vUv).x;
+  vec2 f = 0.5*vec2(abs(T)-abs(B), abs(R)-abs(L));
+  f /= length(f) + 1e-5;
+  f *= uStrength * C;
+  f.y *= -1.0;
+  vec2 v = texture(uVel, vUv).xy;
+  v += f * uDt;
+  v = clamp(v, -1500.0, 1500.0);
+  o = vec4(v, 0.0, 1.0);
+}`;
+
+SH.div = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 o;
+uniform sampler2D uVel; uniform vec2 uTexel;
+void main(){
+  float L = texture(uVel, vUv - vec2(uTexel.x,0.0)).x;
+  float R = texture(uVel, vUv + vec2(uTexel.x,0.0)).x;
+  float B = texture(uVel, vUv - vec2(0.0,uTexel.y)).y;
+  float T = texture(uVel, vUv + vec2(0.0,uTexel.y)).y;
+  o = vec4(0.5*(R - L + T - B), 0.0, 0.0, 1.0);
+}`;
+
+SH.pressure = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 o;
+uniform sampler2D uP, uDiv; uniform vec2 uTexel;
+void main(){
+  float L = texture(uP, vUv - vec2(uTexel.x,0.0)).x;
+  float R = texture(uP, vUv + vec2(uTexel.x,0.0)).x;
+  float B = texture(uP, vUv - vec2(0.0,uTexel.y)).x;
+  float T = texture(uP, vUv + vec2(0.0,uTexel.y)).x;
+  float d = texture(uDiv, vUv).x;
+  o = vec4((L + R + B + T - d)*0.25, 0.0, 0.0, 1.0);
+}`;
+
+SH.grad = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 o;
+uniform sampler2D uP, uVel; uniform vec2 uTexel;
+void main(){
+  float L = texture(uP, vUv - vec2(uTexel.x,0.0)).x;
+  float R = texture(uP, vUv + vec2(uTexel.x,0.0)).x;
+  float B = texture(uP, vUv - vec2(0.0,uTexel.y)).x;
+  float T = texture(uP, vUv + vec2(0.0,uTexel.y)).x;
+  vec2 v = texture(uVel, vUv).xy - 0.5*vec2(R - L, T - B);
+  o = vec4(v, 0.0, 1.0);
+}`;
+
+SH.clear = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 o;
+uniform sampler2D uSrc; uniform float uValue;
+void main(){ o = uValue * texture(uSrc, vUv); }`;
+
+/* --- bleed: paper absorbs ink along its fibres ---------------------- */
+SH.bleed = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 o;
+uniform sampler2D uSrc, uPaper;
+uniform vec2 uTexel;
+uniform float uAmount;
+uniform float uTime;
+void main(){
+  vec4 c0 = texture(uSrc, vUv);
+  vec3 c = c0.rgb;
+  float w = c0.a;
+  vec2 e = uTexel * 2.1;
+  vec3 s = texture(uSrc, vUv + vec2(e.x,0.0)).rgb
+         + texture(uSrc, vUv - vec2(e.x,0.0)).rgb
+         + texture(uSrc, vUv + vec2(0.0,e.y)).rgb
+         + texture(uSrc, vUv - vec2(0.0,e.y)).rgb;
+  vec4 p = texture(uPaper, vUv);
+  float fib = p.b;
+  // only wet ink travels through the fibres; once it dries it is fixed
+  float k = uAmount * (0.06 + 0.94*fib) * smoothstep(0.04, 0.70, w);
+  vec3 outc = mix(c, s*0.25, k);
+  o = vec4(outc, w*0.988);
+}`;
+
+/* --- final composite ------------------------------------------------ */
+SH.final = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 o;
+
+uniform sampler2D uDye, uPaper, uText, uSeal;
+uniform vec2  uRes;
+uniform vec2  uMouse;
+uniform float uTime, uLift, uTextReveal, uSealReveal, uInk, uSeed, uDebug;
+uniform vec2 uFocus;
+uniform float uLiftT;
+
+float hash21(vec2 p){
+  p = fract(p*vec2(123.34,456.21));
+  p += dot(p, p+45.32);
+  return fract(p.x*p.y);
+}
+
+float inkAt(vec2 uv){ return texture(uDye, uv).r; }
+
+void main(){
+  vec2 screenUv = vUv;
+  float driftic = sin(uTime*0.07 + vUv.x*3.1);
+  vec2 uv = vUv;
+  float zoom = 1.0 + 0.55*uLift;
+  vec2 focus = mix(vec2(0.5), uFocus, smoothstep(0.0,1.0,uLift));
+  uv = (uv - focus)/zoom + focus;
+  uv += 0.0018*vec2(sin(uTime*0.061), cos(uTime*0.047));
+  vec2 drift = uv;
+
+  /* ---- washi ------------------------------------------------------ */
+  vec4 pp = texture(uPaper, drift);
+  float mott = pp.r, fib = pp.g, absorb = pp.b;
+  vec3 paper = vec3(0.975,0.959,0.918);
+  paper *= 0.972 + 0.052*mott;
+  paper *= 0.994 + 0.014*(fib - 0.5);
+  float g = hash21(floor(drift*uRes*0.75)) - 0.5;
+  paper += g*0.009;
+  vec2 vc = (drift-0.5)*vec2(uRes.x/uRes.y,1.0);
+  float vig = 1.0 - 0.16*dot(vc,vc);
+  paper *= clamp(vig,0.84,1.0);
+  // raking light from the upper left
+  float rake = dot(normalize(vc + vec2(0.001)), normalize(vec2(-0.65,0.65)));
+  paper *= 0.982 + 0.026*(0.5 - 0.5*rake);
+
+  /* ---- ink -------------------------------------------------------- */
+  vec2 pdir = uMouse * (0.0025 + 0.070*uLift);
+  float dens = 0.0, wet = 0.0;
+  for (int i=0; i<8; i++){
+    float k = float(i)/7.0;
+    vec2 s = drift + pdir*(k - 0.42);
+    vec4 c = texture(uDye, s);
+    float wgt = 1.0 - 0.30*k;
+    dens = max(dens, c.r*wgt);
+    wet  = max(wet,  c.a*wgt);
+  }
+  dens *= uInk;
+
+  vec3 sumi = vec3(0.030,0.032,0.038);
+  float a = 1.0 - exp(-dens*1.9);
+  vec3 col = mix(paper, sumi, a);
+  // pigment separation at the wet rim of a bloom: glue and tannin stain the fibres
+  float rim = smoothstep(0.02,0.42,dens) * (1.0 - smoothstep(0.42,0.95,dens));
+  col += rim * 0.055 * vec3(0.62,0.52,0.36);
+  float sheen = pow(clamp(dens*1.15,0.0,1.0), 2.2) * clamp(wet,0.0,1.0);
+  col += sheen * 0.16 * vec3(0.80,0.86,0.98);
+
+  /* ---- the lift: the painting comes loose from the paper ---------- */
+  if (uLift > 0.0015){
+    float tt = uTime;
+
+    // the mark is caught by a slow current and begins to move like weather
+    float turb = 0.55 + 1.7*uLiftT;
+    vec2 warp = vec2(
+       0.026*sin(drift.y*6.5 + tt*0.19) + 0.011*sin(drift.y*16.0 - tt*0.11),
+       0.024*cos(drift.x*5.5 + tt*0.15) - 0.010*cos(drift.x*14.0 + tt*0.09)
+    ) * uLift * turb * (0.5 + 0.5*abs(driftic));
+
+    vec2 d0 = drift + warp;
+    vec2 par = uMouse * 0.075 + vec2(sin(tt*0.13), cos(tt*0.11))*0.038;
+    float densv = 0.0;
+    for (int i=0;i<6;i++){
+      float k = float(i)/5.0;
+      densv = max(densv, inkAt(d0 + par*(k-0.5))*(1.0 - 0.18*k));
+    }
+    // light spills off the form into the room
+    float bloom = 0.0;
+    for (int i=0;i<6;i++){
+      float a = float(i)*1.0472;
+      bloom += inkAt(d0 + vec2(cos(a),sin(a))*0.035);
+    }
+    bloom = bloom/6.0;
+
+    float e = 2.4/uRes.y;
+    float dL = inkAt(d0 - vec2(e,0.0));
+    float dR = inkAt(d0 + vec2(e,0.0));
+    float dB = inkAt(d0 - vec2(0.0,e));
+    float dT = inkAt(d0 + vec2(0.0,e));
+    vec3 n = normalize(vec3((dL-dR)*4.0, (dB-dT)*4.0, 0.55));
+
+    // a slow light moving through the room, and smoke that is never still
+    vec3 L1 = normalize(vec3(-0.55 + 0.25*sin(tt*0.11), 0.58 + 0.12*cos(tt*0.09), 0.62));
+    float diff = max(dot(n,L1),0.0);
+    float rim  = pow(1.0 - clamp(n.z,0.0,1.0), 2.6);
+    float spec = pow(max(dot(reflect(-L1,n), vec3(0.0,0.0,1.0)),0.0), 7.0);
+
+    float billow = 0.70 + 0.62*texture(uPaper, drift*1.9 + vec2(tt*0.006,-tt*0.004)).r;
+    float erode = texture(uPaper, drift*2.3 + vec2(tt*0.022,-tt*0.015)).r;
+    densv *= mix(1.0, 0.30 + 1.20*erode, uLift*(0.45 + 0.45*uLiftT));
+    float breakup = smoothstep(0.02, 2.6, densv) * (0.55 + 0.45*billow);
+
+    // the sheet is lit from behind: the ink drinks the light, thin passages glow
+    vec2 vcf = (drift - uFocus)*vec2(uRes.x/uRes.y,1.0);
+    float r = length(vcf);
+    float pulse = 0.92 + 0.08*sin(tt*0.55) + 0.05*sin(tt*0.21+1.7);
+    // the lamp behind the sheet slowly closes: dusk falls on the painting
+    float dusk = smoothstep(0.18, 0.92, uLiftT);
+    float tight = 1.0 + 3.4*dusk;
+    vec3 lightSrc = vec3(1.00,0.79,0.50);
+    vec3 backlight = lightSrc*pulse*(1.05*exp(-3.05*r*tight) + 0.20*exp(-1.05*r)*(1.0-dusk))
+                   + vec3(0.005,0.005,0.008) + vec3(0.090,0.077,0.056)*dusk;
+    vec3 trans = backlight*exp(-densv*0.30);
+    // the lamp grazes the raised ink
+    trans += lightSrc*rim*0.26*dusk*breakup;
+    float sheen2 = pow(max(dot(n, normalize(vec3(-0.45,0.60,0.66))),0.0), 4.0);
+    trans += vec3(0.55,0.54,0.58)*sheen2*0.10*breakup;
+    trans += vec3(1.0,0.85,0.62)*pow(min(bloom,1.6)*0.5, 1.8)*0.16;
+    col = mix(col, trans, uLift);
+  }
+
+  /* ---- seal ------------------------------------------------------- */
+  vec4 sl = texture(uSeal, screenUv);
+  float sa = sl.a * smoothstep(0.0, 0.55, uSealReveal);
+  float sealGrain = 0.82 + 0.18*hash21(floor(screenUv*uRes*0.5));
+  col = mix(col, sl.rgb*sealGrain, clamp(sa,0.0,1.0));
+
+  /* ---- poem ------------------------------------------------------- */
+  vec4 tx = texture(uText, screenUv);
+  float order = tx.g;
+  float rev = smoothstep(order-0.030, order+0.012, uTextReveal*1.05);
+  float glyph = tx.r * rev;
+  if (glyph > 0.0005 || uTextReveal > 0.0){
+    vec2 e = 1.4/uRes;
+    float hb = (texture(uText, screenUv+vec2(e.x,0.0)).r
+              + texture(uText, screenUv-vec2(e.x,0.0)).r
+              + texture(uText, screenUv+vec2(0.0,e.y)).r
+              + texture(uText, screenUv-vec2(0.0,e.y)).r)*0.25*rev;
+    float halo = clamp(hb - glyph, 0.0, 1.0);
+    col = mix(col, sumi, clamp(glyph*1.12,0.0,1.0));
+    col = mix(col, mix(col,sumi,0.30), halo*0.42);
+  }
+
+  if (uDebug > 0.5){ o = vec4(vec3(dens*0.25), 1.0); return; }
+
+  /* ---- finishing -------------------------------------------------- */
+  float vig2 = 1.0 - 0.22*dot(vc,vc);
+  col *= clamp(vig2,0.7,1.0);
+  float grain = hash21(floor(screenUv*uRes) + floor(uTime*24.0));
+  col += (grain-0.5)*0.014;
+  o = vec4(col, 1.0);
+}`;
+
+const P = {
+  splat: new Prog(SH.splat),
+  vel:   new Prog(SH.vel),
+  advect:new Prog(SH.advect),
+  curl:  new Prog(SH.curl),
+  vort:  new Prog(SH.vort),
+  div:   new Prog(SH.div),
+  press: new Prog(SH.pressure),
+  grad:  new Prog(SH.grad),
+  clear: new Prog(SH.clear),
+  bleed: new Prog(SH.bleed),
+  final: new Prog(SH.final)
+};
+
+/* ================================================================ PAPER */
+
+function valueNoise(seed){
+  const P0 = new Uint8Array(512);
+  let s = seed;
+  const r = () => { s = (s*1664525 + 1013904223) >>> 0; return s/4294967296; };
+  for (let i=0;i<256;i++) P0[i]=i;
+  for (let i=255;i>0;i--){ const j = Math.floor(r()*(i+1)); const t=P0[i]; P0[i]=P0[j]; P0[j]=t; }
+  for (let i=0;i<256;i++) P0[256+i]=P0[i];
+  const h = (x,y)=> P0[(P0[x&255] + (y&255)) & 255] / 255;
+  return (x,y)=>{
+    const xi = Math.floor(x), yi = Math.floor(y);
+    const xf = x-xi, yf = y-yi;
+    const u = xf*xf*(3-2*xf), v = yf*yf*(3-2*yf);
+    const a = h(xi,yi), b = h(xi+1,yi), c = h(xi,yi+1), d = h(xi+1,yi+1);
+    return lerp(lerp(a,b,u), lerp(c,d,u), v);
+  };
+}
+
+const HAIKU = [
+  ['雪の夜','墨はしずかに','花となる'],
+  ['墨の花','ひらけば池に','月がさす'],
+  ['余白こそ','山の姿と','なりにけり'],
+  ['とどまらぬ','筆のあとさき','霧の海'],
+  ['一筆の','あとに残るは','秋の空'],
+  ['筆をおき','しばし聞こえる','虫の声'],
+  ['春の雨','紙のうえにも','芽がふたつ'],
+  ['指先の','熱だけ残る','冬の月']
+];
+
+let paperTex = null;
+
+function buildPaper(){
+  const S = 512;
+  const n1 = valueNoise(1337);
+  const n2 = valueNoise(90210);
+  const n3 = valueNoise(4242);
+  const data = new Uint8Array(S*S*4);
+  const fbm = (f,x,y,oct) => {
+    let v=0, amp=0.5, tot=0;
+    for (let i=0;i<oct;i++){ v += f(x,y)*amp; tot += amp; x*=2.07; y*=2.07; amp*=0.5; }
+    return v/tot;
+  };
+  for (let y=0;y<S;y++){
+    for (let x=0;x<S;x++){
+      const i = (y*S+x)*4;
+      // mottling of the pulp
+      const m = fbm(n1, x/11, y/11, 5);
+      // long fibres: stretched noise + a fine cross streak
+      const fibA = fbm(n2, x/2.0, y/46.0, 3);
+      const fibB = fbm(n3, x/70.0, y/2.2, 2);
+      const fib = clamp(0.62*fibA + 0.38*fibB, 0, 1);
+      const abs = fbm(n2, x/18 + 40, y/18 + 40, 3);
+      data[i]   = Math.round(clamp(m*1.5-0.18,0,1)*255);
+      data[i+1] = Math.round(clamp(fib*1.35-0.1,0,1)*255);
+      data[i+2] = Math.round(clamp(abs*1.6-0.2,0,1)*255);
+      data[i+3] = 255;
+    }
+  }
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, S, S, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+  return t;
+}
+
+/* =============================================================== SIM SYS */
+
+const SIM = 512;
+let dye, vel, div, curl, pres;
+let simW = 0, simH = 0;
+
+function allocSim(){
+  if (dye) { destroyDouble(dye); destroyDouble(vel); destroyDouble(div); destroyDouble(curl); destroyDouble(pres); }
+  const target = (window.innerWidth * DPR > 1600) ? 2048 : 1024;
+  const dsize = Math.min(2048, Math.max(1024, target));
+  dye  = makeDouble(dsize, dsize);
+  vel  = makeDouble(SIM, SIM);
+  div  = makeDouble(SIM, SIM);
+  curl = makeDouble(SIM, SIM, gl.NEAREST);
+  pres = makeDouble(SIM, SIM, gl.NEAREST);
+  simW = dsize; simH = dsize;
+}
+
+function clearTargets(){
+  for (const d of [dye, vel, div, curl, pres]){
+    for (const f of [d.read, d.write]){
+      gl.bindFramebuffer(gl.FRAMEBUFFER, f.fbo);
+      gl.viewport(0,0,f.w,f.h);
+      gl.clearColor(0,0,0,0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+    }
+  }
+}
+
+const aspect = () => canvas.width / canvas.height;
+
+function splatInk(x, y, dx, dy, radius, alpha, seed, bristle){
+  P.splat.use();
+  P.splat.tex('uTarget', dye.read.tex, 0);
+  P.splat.set('uPoint', x, y);
+  const l = Math.hypot(dx, dy) || 1e-6;
+  P.splat.set('uDir', dx/l, dy/l);
+  P.splat.set('uRadius', radius);
+  P.splat.set('uAspect', aspect());
+  P.splat.set('uAlpha', alpha);
+  P.splat.set('uWet', 1.0);
+  P.splat.set('uBristle', bristle);
+  P.splat.set('uSeed', seed % 97);
+  P.splat.set('uColor', 0.92, 0.90, 0.86);
+  drawTo(dye.write);
+  dye.swap();
+}
+
+function splatVel(x, y, fx, fy, radius){
+  P.vel.use();
+  P.vel.tex('uTarget', vel.read.tex, 0);
+  P.vel.set('uPoint', x, y);
+  P.vel.set('uRadius', radius);
+  P.vel.set('uAspect', aspect());
+  P.vel.set('uForce', fx, fy);
+  drawTo(vel.write);
+  vel.swap();
+}
+
+const PRESSURE_ITERS = 26;
+
+function stepFluid(dt, time){
+  const tx = 1/SIM, ty = 1/SIM;
+
+  // curl
+  P.curl.use();
+  P.curl.tex('uVel', vel.read.tex, 0);
+  P.curl.set('uTexel', tx, ty);
+  drawTo(curl.write); curl.swap();
+
+  // vorticity confinement
+  P.vort.use();
+  P.vort.tex('uVel', vel.read.tex, 0).tex('uCurl', curl.read.tex, 1);
+  P.vort.set('uTexel', tx, ty);
+  P.vort.set('uStrength', 7.0);
+  P.vort.set('uDt', dt);
+  drawTo(vel.write); vel.swap();
+
+  // divergence
+  P.div.use();
+  P.div.tex('uVel', vel.read.tex, 0);
+  P.div.set('uTexel', tx, ty);
+  drawTo(div.write); div.swap();
+
+  // pressure decay + solve
+  P.clear.use();
+  P.clear.tex('uSrc', pres.read.tex, 0);
+  P.clear.set('uValue', 0.82);
+  drawTo(pres.write); pres.swap();
+
+  P.press.use();
+  P.press.tex('uDiv', div.read.tex, 1);
+  P.press.set('uTexel', tx, ty);
+  for (let i=0;i<PRESSURE_ITERS;i++){
+    P.press.tex('uP', pres.read.tex, 0);
+    drawTo(pres.write); pres.swap();
+  }
+
+  // project
+  P.grad.use();
+  P.grad.tex('uP', pres.read.tex, 0).tex('uVel', vel.read.tex, 1);
+  P.grad.set('uTexel', tx, ty);
+  drawTo(vel.write); vel.swap();
+
+  // advect velocity
+  P.advect.use();
+  P.advect.tex('uVel', vel.read.tex, 0).tex('uSrc', vel.read.tex, 1);
+  P.advect.set('uTexel', tx, ty);
+  P.advect.set('uDt', dt);
+  P.advect.set('uDiss', 0.9955);
+  drawTo(vel.write); vel.swap();
+
+  // advect dye
+  P.advect.use();
+  P.advect.tex('uVel', vel.read.tex, 0).tex('uSrc', dye.read.tex, 1);
+  P.advect.set('uTexel', 1/dye.w, 1/dye.h);
+  P.advect.set('uDt', dt);
+  P.advect.set('uDiss', 0.99996);
+  drawTo(dye.write); dye.swap();
+
+  // paper bleeds the ink outward, slowly and unevenly
+  P.bleed.use();
+  P.bleed.tex('uSrc', dye.read.tex, 0).tex('uPaper', paperTex, 1);
+  P.bleed.set('uTexel', 1/dye.w, 1/dye.h);
+  P.bleed.set('uAmount', 0.085);
+  P.bleed.set('uTime', time);
+  drawTo(dye.write); dye.swap();
+}
+
+/* ============================================================ TEXT LAYER */
+
+let textTex = null, sealTex = null;
+let textCanvas = null, sealCanvas = null;
+
+const JP_FONT = '"Hiragino Mincho ProN","Yu Mincho","YuMincho","Noto Serif JP","MS Mincho",serif';
+
+function newCanvasTexture(){
+  const c = document.createElement('canvas');
+  c.width = canvas.width; c.height = canvas.height;
+  const g = c.getContext('2d');
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0,0,0,0]));
+  return { c, g, t };
+}
+
+function uploadText(layer){
+  gl.bindTexture(gl.TEXTURE_2D, layer.t);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, layer.c);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+}
+
+/* Draws the poem as vertical columns, right to left. The green channel
+   encodes the order in which each glyph is revealed, so the poem writes
+   itself character by character while the composite shader wets the edge. */
+let lastHaiku = null;
+
+function buildPoem(haiku){
+  lastHaiku = haiku;
+  const W = canvas.width, H = canvas.height;
+  const g = textCanvas.g;
+  g.clearRect(0,0,W,H);
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+
+  const portrait = H > W;
+  const fs = Math.round(Math.min(W,H) * (portrait ? 0.056 : 0.042));
+  g.font = `${fs}px ${JP_FONT}`;
+
+  const cols = [haiku[0], haiku[1], haiku[2]];
+  const nCols = cols.length;
+  const lineH = fs * 1.22;
+  const colGap = fs * 1.95;
+
+  const maxLen = Math.max(...cols.map(c => [...c].length));
+  const blockH = maxLen * lineH;
+
+  const rightX = portrait ? W*0.50 + colGap : W*0.315;
+  const topY = portrait ? H*0.10 : clamp(H*0.5 - blockH*0.5, H*0.12, H*0.30);
+
+  let orderIdx = 0;
+  const total = cols.reduce((a,c)=>a+[...c].length,0);
+
+  for (let c=0; c<nCols; c++){
+    const x = rightX - c*colGap;
+    const chars = [...cols[c]];
+    for (let i=0;i<chars.length;i++){
+      const ord = 0.07 + 0.93*(orderIdx / Math.max(1,total-1));
+      const gg = Math.round(ord*250);
+      g.fillStyle = `rgb(255,${gg},0)`;
+      const y = topY + i*lineH + fs*0.55;
+      g.fillText(chars[i], x, y);
+      orderIdx++;
+    }
+  }
+
+  uploadText(textCanvas);
+
+  /* seal + signature, set at the lower left of the inscription */
+  const sg = sealCanvas.g;
+  sg.clearRect(0,0,W,H);
+  const sealSize = Math.round(fs*1.15);
+  const sigX = rightX - (nCols-1)*colGap - colGap*1.05;
+  const sigY = topY + blockH - sealSize*0.2;
+
+  sg.textAlign = 'center'; sg.textBaseline = 'middle';
+  sg.fillStyle = '#fff';
+
+  const sx = sigX, sy = sigY + sealSize*0.55;
+  const r = sealSize*0.5;
+  sg.fillStyle = '#fff';
+  // carved seal: filled square with knocked-out characters
+  const rr = (x,y,w,h,rad)=>{
+    sg.beginPath();
+    sg.moveTo(x+rad,y); sg.lineTo(x+w-rad,y); sg.quadraticCurveTo(x+w,y,x+w,y+rad);
+    sg.lineTo(x+w,y+h-rad); sg.quadraticCurveTo(x+w,y+h,x+w-rad,y+h);
+    sg.lineTo(x+rad,y+h); sg.quadraticCurveTo(x,y+h,x,y+h-rad);
+    sg.lineTo(x,y+rad); sg.quadraticCurveTo(x,y,x+rad,y); sg.closePath(); sg.fill();
+  };
+  rr(sx-r, sy-r, sealSize, sealSize, sealSize*0.06);
+  sg.globalCompositeOperation = 'destination-out';
+  sg.fillStyle = '#000';
+  sg.font = `${Math.round(sealSize*0.40)}px ${JP_FONT}`;
+  sg.fillText('余', sx, sy - sealSize*0.20);
+  sg.fillText('白', sx, sy + sealSize*0.21);
+  sg.globalCompositeOperation = 'source-over';
+  // wear: punch tiny holes
+  sg.globalCompositeOperation = 'destination-out';
+  for (let i=0;i<220;i++){
+    const a = Math.random()*Math.PI*2, rad = Math.pow(Math.random(),0.6)*r;
+    const px = sx + Math.cos(a)*rad, py = sy + Math.sin(a)*rad;
+    sg.globalAlpha = Math.random()*0.55;
+    sg.beginPath(); sg.arc(px,py, Math.random()*sealSize*0.022, 0, 7); sg.fill();
+  }
+  sg.globalAlpha = 1;
+  sg.globalCompositeOperation = 'source-over';
+
+  uploadText(sealCanvas);
+
+  // tint the seal texture vermilion
+  gl.bindTexture(gl.TEXTURE_2D, sealTex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, tintCanvas(sealCanvas.c, 184, 47, 38));
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+}
+
+function tintCanvas(src, r, g2, b){
+  const c = document.createElement('canvas');
+  c.width = src.width; c.height = src.height;
+  const g = c.getContext('2d');
+  g.drawImage(src, 0, 0);
+  g.globalCompositeOperation = 'source-in';
+  g.fillStyle = `rgb(${r},${g2},${b})`;
+  g.fillRect(0,0,c.width,c.height);
+  return c;
+}
+
+function buildTextLayers(){
+  textCanvas = newCanvasTexture();
+  sealCanvas = newCanvasTexture();
+  textTex = textCanvas.t;
+  sealTex = sealCanvas.t;
+}
+
+/* ================================================================= SOUND */
+
+class Sound {
+  constructor(){ this.ok = false; this.ctx = null; this.brushGain = null; this.master = null; }
+
+  start(){
+    if (this.ok) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    const ctx = new AC();
+    this.ctx = ctx;
+    if (ctx.state === 'suspended') ctx.resume();
+    this.master = ctx.createGain();
+    this.master.gain.value = 0.0;
+    this.master.connect(ctx.destination);
+
+    // reverb from a synthesised impulse
+    const len = Math.floor(ctx.sampleRate * 3.4);
+    const ir = ctx.createBuffer(2, len, ctx.sampleRate);
+    for (let ch=0; ch<2; ch++){
+      const d = ir.getChannelData(ch);
+      for (let i=0;i<len;i++){
+        const t = i/len;
+        d[i] = (Math.random()*2-1) * Math.pow(1-t, 3.2) * (ch ? 0.85 : 1.0);
+      }
+    }
+    const conv = ctx.createConvolver(); conv.buffer = ir;
+    const wet = ctx.createGain(); wet.gain.value = 0.55;
+    conv.connect(wet).connect(this.master);
+
+    this.dry = ctx.createGain(); this.dry.gain.value = 0.7;
+    this.dry.connect(this.master);
+    this.send = ctx.createGain(); this.send.gain.value = 0.5;
+    this.send.connect(conv);
+
+    // a low, barely-there drone
+    const drone = ctx.createGain(); drone.gain.value = 0.0;
+    drone.connect(this.dry); drone.connect(this.send);
+    [55, 82.41, 110.0, 164.81].forEach((f,i)=>{
+      const o = ctx.createOscillator();
+      o.type = i%2 ? 'triangle' : 'sine';
+      o.frequency.value = f * (1 + (Math.random()-0.5)*0.002);
+      const gg = ctx.createGain(); gg.gain.value = 0.16/(i+1);
+      const lp = ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value = 320;
+      o.connect(gg).connect(lp).connect(drone);
+      o.start();
+    });
+    this.drone = drone;
+
+    // brush: filtered noise
+    const nlen = ctx.sampleRate * 2;
+    const nb = ctx.createBuffer(1, nlen, ctx.sampleRate);
+    const nd = nb.getChannelData(0);
+    for (let i=0;i<nlen;i++) nd[i] = Math.random()*2-1;
+    this.noise = nb;
+    const br = ctx.createBufferSource(); br.buffer = nb; br.loop = true;
+    const bp = ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=1600; bp.Q.value=0.9;
+    const bg = ctx.createGain(); bg.gain.value = 0.0;
+    br.connect(bp).connect(bg).connect(this.dry);
+    const sendB = ctx.createGain(); sendB.gain.value = 0.25; bg.connect(sendB).connect(conv);
+    br.start();
+    this.brushBP = bp; this.brushGain = bg;
+
+    // plucked string, generated with Karplus-Strong
+    this.pluckBuf = this.ksBuffer(ctx);
+
+    this.master.gain.linearRampToValueAtTime(0.9, ctx.currentTime + 4.0);
+    this.drone.gain.linearRampToValueAtTime(0.09, ctx.currentTime + 8.0);
+    this.ok = true;
+  }
+
+  ksBuffer(ctx){
+    const sr = ctx.sampleRate;
+    const dur = 2.6;
+    const n = Math.floor(sr*dur);
+    const buf = ctx.createBuffer(1, n, sr);
+    const d = buf.getChannelData(0);
+    const f0 = 110;
+    const N = Math.round(sr/f0);
+    const line = new Float32Array(N);
+    for (let i=0;i<N;i++) line[i] = (Math.random()*2-1)*0.6;
+    // excite with a soft, plucked shape
+    for (let i=0;i<N;i++) line[i] *= Math.sin(Math.PI*i/N) * 0.9 + 0.1;
+    let idx = 0;
+    for (let i=0;i<n;i++){
+      const cur = line[idx];
+      const nxt = line[(idx+1)%N];
+      const v = 0.9965*(cur*0.5 + nxt*0.5);
+      line[idx] = v;
+      d[i] = cur;
+      idx = (idx+1)%N;
+    }
+    // body resonance + fade in the tail
+    let lp = 0;
+    for (let i=0;i<n;i++){
+      lp += (d[i]-lp)*0.35;
+      const t = i/n;
+      d[i] = (d[i]*0.6 + lp*0.4) * Math.pow(1-t, 1.5);
+    }
+    return buf;
+  }
+
+  pluck(freq, when, vel){
+    if (!this.ok) return;
+    const ctx = this.ctx;
+    const t = when || ctx.currentTime;
+    const s = ctx.createBufferSource();
+    s.buffer = this.pluckBuf;
+    s.playbackRate.value = freq / 110;
+    const g = ctx.createGain(); g.gain.value = vel;
+    const p = ctx.createStereoPanner();
+    p.pan.value = (Math.random()*2-1)*0.6;
+    s.connect(g).connect(p);
+    p.connect(this.dry);
+    const sg = ctx.createGain(); sg.gain.value = 0.9; p.connect(sg).connect(this.send);
+    s.start(t); s.stop(t + 3.0);
+  }
+
+  drop(vel=1){
+    if (!this.ok) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    const s = ctx.createBufferSource(); s.buffer = this.noise;
+    s.playbackRate.value = 1;
+    const bp = ctx.createBiquadFilter(); bp.type='bandpass'; bp.Q.value=5;
+    bp.frequency.setValueAtTime(2600, t);
+    bp.frequency.exponentialRampToValueAtTime(420, t+0.22);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0, t);
+    g.gain.linearRampToValueAtTime(0.5*vel, t+0.006);
+    g.gain.exponentialRampToValueAtTime(0.0006, t+0.30);
+    s.connect(bp).connect(g).connect(this.dry);
+    const sg = ctx.createGain(); sg.gain.value = 0.7; g.connect(sg).connect(this.send);
+    s.start(t, Math.random()*0.5, 0.36);
+  }
+
+  brush(amount, speed){
+    if (!this.ok) return;
+    const t = this.ctx.currentTime;
+    const target = clamp(amount*0.16, 0, 0.16);
+    this.brushGain.gain.setTargetAtTime(target, t, 0.05);
+    this.brushBP.frequency.setTargetAtTime(700 + speed*3800, t, 0.06);
+  }
+
+  swell(v){
+    if (!this.ok) return;
+    this.drone.gain.setTargetAtTime(0.09 + v*0.16, this.ctx.currentTime, 1.2);
+  }
+}
+
+const sound = new Sound();
+
+/* ================================================================ STATE */
+
+const S = {
+  started: false,
+  t: 0,
+  lastPaint: -100,
+  phase: 'idle',      // idle | enso | poem | seal | lift | release
+  pt: 0,              // phase time
+  liftTarget: 0, lift: 0,
+  ink: 1,
+  textReveal: 0,
+  sealReveal: 0,
+  ensoP: 0,
+  cycle: 0,
+  pointer: { x:0.5, y:0.5, px:0.5, py:0.5, vx:0, vy:0, active:false, down:false, idle:0 },
+  raw: { x:-1, y:-1 },
+  mark: { x:0.5, y:0.5 },
+  focus: [0.605, 0.50],
+  m: { x:0.0, y:0.0, tx:0.0, ty:0.0 },
+  autoActive: false,
+  autoPrev: null,
+  autoStrokeT: 0,
+  lastAutoSplat: 0,
+  pluckT: 0
+};
+
+const SCALE = [146.83, 155.56, 196.00, 220.00, 233.08, 293.66, 311.13, 392.00, 440.00];
+
+window.__yohaku = S;
+window.__sound = sound;
+window.__probe = (x, y) => {
+  const f = dye.read;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, f.fbo);
+  const buf = new Float32Array(4);
+  gl.readPixels(Math.floor(x*f.w), Math.floor(y*f.h), 1, 1, gl.RGBA, gl.FLOAT, buf);
+  return Array.from(buf);
+};
+window.__maxDye = () => {
+  const f = dye.read;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, f.fbo);
+  const buf = new Float32Array(f.w*f.h*4);
+  gl.readPixels(0,0,f.w,f.h, gl.RGBA, gl.FLOAT, buf);
+  let m = 0; for (let i=0;i<buf.length;i+=4) m = Math.max(m, buf[i]);
+  return m;
+};
+
+/* --------------------------------------------------------------- input */
+function canvasCoords(ev){
+  const r = canvas.getBoundingClientRect();
+  return { x:(ev.clientX - r.left)/r.width, y:1.0 - (ev.clientY - r.top)/r.height };
+}
+
+function onMove(ev){
+  if (!S.started) return;
+  const p = canvasCoords(ev);
+  // ignore cursor jitter: a hand at rest must not keep the painting awake
+  const moved = Math.hypot(p.x - S.raw.x, p.y - S.raw.y);
+  if (moved < 0.0016) return;
+  S.raw.x = p.x; S.raw.y = p.y;
+  // A hand at rest still jitters by a pixel or two. Only real travel is the
+  // visitor taking up the brush; otherwise the piece would never breathe.
+  if (Math.hypot(p.x - S.mark.x, p.y - S.mark.y) > 0.030){
+    S.mark.x = p.x; S.mark.y = p.y;
+    S.lastPaint = S.t;
+    if (S.phase !== 'idle') interrupt();
+  }
+  S.pointer.x = p.x; S.pointer.y = p.y;
+  S.pointer.active = true;
+  S.pointer.idle = 0;
+  S.m.tx = (p.x - 0.5) * 2.0;
+  S.m.ty = (p.y - 0.5) * 2.0;
+}
+
+function onDown(ev){
+  if (!S.started) return;
+  S.pointer.down = true;
+  S.pointer.idle = 0;
+  S.lastPaint = S.t;
+  const p = canvasCoords(ev);
+  // a drop of ink
+  const r = 0.035;
+  for (let i=0;i<3;i++){
+    splatInk(p.x + (Math.random()-0.5)*r*0.3, p.y + (Math.random()-0.5)*r*0.3, 1, 0, r*(0.65+i*0.2), 1.15, Math.random()*50, 0.2);
+  }
+  for (let i=0;i<18;i++){
+    const a = Math.random()*Math.PI*2, sp = rnd(0.9,0.1);
+    splatVel(p.x + Math.cos(a)*r*0.4, p.y + Math.sin(a)*r*0.4,
+             Math.cos(a)*sp*0.7, Math.sin(a)*sp*0.7, r*0.9);
+  }
+  sound.drop(1.0);
+  if (S.phase !== 'idle') interrupt();
+}
+
+function onUp(){ S.pointer.down = false; }
+
+canvas.addEventListener('pointermove', onMove, {passive:true});
+canvas.addEventListener('pointerdown', onDown, {passive:true});
+window.addEventListener('pointerup', onUp, {passive:true});
+canvas.addEventListener('pointerleave', ()=>{ S.pointer.active = false; });
+
+window.addEventListener('keydown', e=>{
+  if (e.key === 'c' || e.key === 'C'){
+    softClear();
+  }
+  if (e.key === ' '){ S.lastPaint = S.t; if (S.phase!=='idle') interrupt(); }
+});
+
+/* ---------------------------------------------------------- painting */
+function paintFromPointer(dt){
+  const p = S.pointer;
+  const dx = p.x - p.px, dy = p.y - p.py;
+  const dist = Math.hypot(dx, dy);
+
+  if (dist > 0.0004 && S.started && p.active){
+    const speed = dist / Math.max(dt, 0.001);
+    const radius = (p.down ? 0.032 : 0.020) + Math.min(speed*0.015, 0.022);
+    const alpha = 0.48 + Math.min(speed*0.40, 0.60);
+
+    const steps = Math.min(10, Math.max(1, Math.floor(dist/0.004)));
+    for (let i=1;i<=steps;i++){
+      const t = i/steps;
+      const x = lerp(p.px, p.x, t), y = lerp(p.py, p.y, t);
+      splatInk(x, y, dx, dy, radius, alpha/steps*1.6, p.x*97.0 + p.y*61.0, 0.55 + Math.min(dist*30,0.4));
+      splatVel(x, y, dx*45*(p.down?1.5:1.0), dy*45*(p.down?1.5:1.0), radius*1.1);
+    }
+    sound.brush(clamp(dist*14, 0.15, 1.0), speed);
+    if (S.t - S.pluckT > 0.42 + Math.random()*0.5){
+      S.pluckT = S.t;
+      sound.pluck(SCALE[Math.floor(Math.random()*SCALE.length)] * (Math.random()<0.25 ? 2 : 1), 0, 0.16);
+    }
+  } else {
+    sound.brush(0, 0);
+  }
+  p.px = p.x; p.py = p.y;
+}
+
+/* -------------------------------------------------- auto choreography */
+function interrupt(){
+  if (window.__lock) return;
+  S.autoActive = false;
+  S.liftTarget = 0;
+  if (S.phase === 'idle' || S.phase === 'release') return;
+  // let the poem dissolve rather than jump; never erase the visitor's ink
+  S.phase = 'release';
+  S.pt = 0;
+  S.clearOnRelease = false;
+}
+
+function startCycle(){
+  S.cycle++;
+  S.focus = (canvas.height > canvas.width) ? [0.50, 0.37] : [0.605, 0.50];
+  const h = HAIKU[(Math.random()*HAIKU.length)|0];
+  buildPoem(h);
+  S.phase = 'enso';
+  S.pt = 0;
+  S.ensoP = 0;
+  S.textReveal = 0;
+  S.sealReveal = 0;
+  S.liftTarget = 0;
+  S.clearOnRelease = false;
+  S.autoActive = true;
+  S.autoPrev = null;
+  sound.swell(0.15);
+}
+
+function ensoPoint(u){
+  // a brush circle with the traditional opening and a dry, thinning tail
+  const a0 = -2.05, a1 = 3.72;
+  const a = a0 + (a1-a0)*u;
+  const wob = 0.010*Math.sin(u*10.0) + 0.008*Math.sin(u*4.3+1.0);
+  const r = 0.196 + wob + 0.022*u;
+  const ar = canvas.height / canvas.width;
+  return [S.focus[0] + Math.cos(a)*r*ar, S.focus[1] + Math.sin(a)*r];
+}
+
+function autoStep(dt){
+  S.pt += dt;
+
+  if (S.phase === 'idle'){
+    const idleFor = S.t - S.lastPaint;
+    if (idleFor > 14.0){ startCycle(); }
+    return;
+  }
+
+  if (S.phase === 'enso'){
+    const DUR = 6.4;
+    const u = clamp(S.pt/DUR, 0, 1);
+    // the hand is not a machine: slight pause and acceleration
+    const uu = clamp(smooth(u)*0.84 + u*0.16, 0, 1);
+    const [x,y] = ensoPoint(uu);
+    const [px,py] = S.autoPrev || ensoPoint(Math.max(0,uu-0.01));
+    const dx = x-px, dy = y-py;
+    const speed = Math.hypot(dx,dy)/Math.max(dt,0.001);
+    // the brush lands heavy, runs across the paper, then dries out
+    const press = 1.0 - 0.66*Math.pow(uu, 2.6);
+    const radius = (0.029*press + 0.0045) * (1.0 + 0.15*Math.sin(uu*23.0) + 0.08*Math.sin(uu*7.0+2.0));
+    const alpha  = 0.46*press + 0.05;
+    const steps = Math.max(1, Math.min(16, Math.floor(Math.hypot(dx,dy)/0.003)));
+    for (let i=1;i<=steps;i++){
+      const t = i/steps;
+      const sx = lerp(px,x,t), sy = lerp(py,y,t);
+      splatInk(sx, sy, dx, dy, radius, alpha/steps*2.0, uu*40.0, 0.16 + 0.72*(1-press));
+      splatVel(sx, sy, dx*170, dy*170, radius*1.35);
+    }
+    if (uu < 0.012){
+      splatInk(x, y, dx, dy, radius*1.45, 0.11, uu*40.0, 0.2);
+    }
+    S.autoPrev = [x,y];
+    sound.brush(clamp(speed*1.4,0.1,0.9), speed);
+    if (S.t - S.pluckT > 1.05){
+      S.pluckT = S.t;
+      const idx = [0,2,3,5,7][(Math.random()*5)|0];
+      sound.pluck(SCALE[idx], 0, 0.13);
+    }
+    if (u >= 1){
+      S.phase = 'poem'; S.pt = 0;
+    }
+    return;
+  }
+
+  if (S.phase === 'poem'){
+    S.textReveal = clamp(S.pt/7.2, 0, 1.06);
+    if (S.pt > 7.9){ S.phase = 'seal'; S.pt = 0; }
+    return;
+  }
+
+  if (S.phase === 'seal'){
+    S.sealReveal = clamp(S.pt/0.9, 0, 1.2);
+    if (S.pt > 1.4){
+      sound.pluck(146.83*0.5, 0, 0.22);
+      sound.pluck(220.0, 0.06, 0.12);
+      S.phase = 'lift'; S.pt = 0; S.liftTarget = 1;
+    }
+    return;
+  }
+
+  if (S.phase === 'lift'){
+    S.liftTarget = 1;
+    sound.swell(clamp(S.pt/6,0,1)*0.9);
+    if (S.pt > 16.0){
+      S.phase = 'release'; S.pt = 0; S.liftTarget = 0;
+      S.clearOnRelease = true;
+    }
+    return;
+  }
+
+  if (S.phase === 'release'){
+    S.liftTarget = 0;
+    S.textReveal = Math.max(0, S.textReveal - dt*0.55);
+    S.sealReveal = Math.max(0, S.sealReveal - dt*1.1);
+    if (S.pt > 1.8){
+      if (S.clearOnRelease) softClear();
+      S.clearOnRelease = false;
+      S.phase = 'idle'; S.pt = 0;
+      S.lastPaint = S.t - 4.0;
+      sound.swell(0.1);
+    }
+    return;
+  }
+}
+
+let clearing = 0;
+function softClear(){ clearing = 1; S.textReveal = 0; S.sealReveal = 0; }
+
+/* ================================================================ FRAME */
+
+let last = performance.now();
+let acc = 0;
+let frameCount = 0, fpsAcc = 0;
+
+function resize(){
+  canvas.width = Math.round(window.innerWidth * DPR);
+  canvas.height = Math.round(window.innerHeight * DPR);
+  gl.viewport(0,0,canvas.width,canvas.height);
+  buildTextLayers();
+  if (lastHaiku) buildPoem(lastHaiku);
+}
+
+function render(dt, time){
+  gl.disable(gl.BLEND);
+
+  if (clearing > 0){
+    // fade the ink out over ~1.2s instead of popping
+    P.clear.use();
+    P.clear.tex('uSrc', dye.read.tex, 0);
+    P.clear.set('uValue', 1.0 - clearing*0.055);
+    drawTo(dye.write); dye.swap();
+    clearing = Math.max(0, clearing - dt*0.55);
+    if (clearing === 0){
+      gl.bindFramebuffer(gl.FRAMEBUFFER, dye.read.fbo);
+      gl.viewport(0,0,dye.w,dye.h);
+      gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, dye.write.fbo);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+    }
+  }
+
+  P.final.use();
+  P.final.tex('uDye', dye.read.tex, 0)
+         .tex('uPaper', paperTex, 1)
+         .tex('uText', textTex, 2)
+         .tex('uSeal', sealTex, 3);
+  P.final.set('uRes', canvas.width, canvas.height);
+  S.m.x = lerp(S.m.x, S.m.tx, 0.045);
+  S.m.y = lerp(S.m.y, S.m.ty, 0.045);
+  P.final.set('uMouse', S.m.x, S.m.y);
+  P.final.set('uTime', time);
+  P.final.set('uLift', S.lift);
+  P.final.set('uTextReveal', S.textReveal);
+  P.final.set('uSealReveal', S.sealReveal);
+  P.final.set('uInk', S.ink);
+  P.final.set('uDebug', window.__debug|0);
+  P.final.set('uFocus', S.focus[0], S.focus[1]);
+  P.final.set('uLiftT', S.phase === 'lift' ? clamp(S.pt/16.0, 0, 1) : 1.0);
+  drawTo(null);
+}
+
+function loop(now){
+  requestAnimationFrame(loop);
+  const raw = (now - last) / 1000;
+  last = now;
+  const dt = clamp(raw, 0.001, 0.033);
+  S.t += dt;
+
+  if (!S.started) return;
+  if (window.__freeze){ render(dt, S.t); return; }
+
+  try {
+    // pointer idle bookkeeping
+    S.pointer.idle += dt;
+
+    paintFromPointer(dt);
+    autoStep(dt);
+
+    S.lift = lerp(S.lift, S.liftTarget, 1 - Math.pow(0.60, dt));
+
+    stepFluid(dt, S.t);
+    render(dt, S.t);
+  } catch (err) {
+    if (!S.failed) { S.failed = true; console.error(err); }
+  }
+
+  // fps readout (hidden by default)
+  frameCount++; fpsAcc += raw;
+}
+
+/* ------------------------------------------------------------ startup */
+
+function boot(){
+  allocSim();
+  paperTex = buildPaper();
+  buildTextLayers();
+  resize();
+
+  requestAnimationFrame(t=>{ last = t; loop(t); });
+
+  const intro = $('intro');
+  const begin = ()=>{
+    if (S.started) return;
+    S.started = true;
+    intro.classList.add('gone');
+    sound.start();
+    S.lastPaint = S.t;
+    S.phase = 'idle';
+    S.pt = 0;
+    setTimeout(()=> hintEl.classList.add('on'), 1400);
+    setTimeout(()=> hintEl.classList.remove('on'), 11000);
+    // the first movement comes on its own
+    S.lastPaint = S.t - 7.0;
+  };
+  intro.addEventListener('click', begin);
+  window.addEventListener('keydown', e=>{ if (!S.started) begin(); }, {once:false});
+
+  window.addEventListener('resize', ()=>{
+    resize();
+  });
+
+  document.addEventListener('visibilitychange', ()=>{ if (document.hidden) sound.brush(0,0); });
+}
+
+boot();
+</script>
+</body>
+</html>
