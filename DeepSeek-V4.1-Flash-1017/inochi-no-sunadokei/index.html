@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>命の砂時計 — The Hourglass of Life</title>
+<meta name="description" content="A real-time hourglass in which every grain is a life. WebGL, no assets, no images.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23050505'/%3E%3Cpath d='M13 4h6l-1 9 1 9h-6l1-9z' fill='%23e9dfca'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="scene" aria-hidden="true"></canvas>
+
+<div id="ui" aria-hidden="false">
+  <div id="brand">
+    <span class="jp">命の砂時計</span>
+    <span class="en">THE HOURGLASS OF LIFE</span>
+  </div>
+
+  <div id="readout">
+    <div class="cell">
+      <span class="val" id="lives">0</span>
+      <span class="lbl">還った命　LIVES RETURNED</span>
+    </div>
+    <div class="cell right">
+      <span class="val" id="clock">00:00:00</span>
+      <span class="lbl">与えた時間　TIME GIVEN</span>
+    </div>
+  </div>
+
+  <button id="sound" type="button" aria-pressed="true" title="Sound on / off (M)">
+    <span class="dot"></span><span class="txt">SOUND</span>
+  </button>
+
+  <div id="hint">動かす　・　クリックで返す　・　SPACE</div>
+</div>
+
+<div id="gate">
+  <div class="frame">
+    <span class="hair top" aria-hidden="true"></span>
+    <h1>命の砂時計</h1>
+    <p class="en">THE HOURGLASS OF LIFE</p>
+    <p class="lead">落ちる砂は、あなたの時間。</p>
+    <button id="enter" type="button">はじめる</button>
+    <p class="note">音が出ます　／　sound on　・　headphones</p>
+    <span class="hair bottom" aria-hidden="true"></span>
+  </div>
+</div>
+
+<noscript><p class="nojs">この作品は JavaScript と WebGL2 を必要とします。</p></noscript>
+<script src="main.js"></script>
+</body>
+</html>

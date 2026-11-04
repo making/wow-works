@@ -1,0 +1,234 @@
+:root{
+  --paper: #e9dfca;
+  --paper-dim: rgba(233,223,202,.42);
+  --paper-faint: rgba(233,223,202,.16);
+  --ink: #050505;
+}
+
+*{ box-sizing:border-box; margin:0; padding:0; }
+
+html,body{
+  width:100%; height:100%;
+  background:#000;
+  color:var(--paper);
+  overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+
+body{
+  font-family: "Hiragino Mincho ProN","Hiragino Mincho Pro","Yu Mincho","YuMincho","Noto Serif JP",serif;
+  cursor:default;
+  user-select:none;
+  -webkit-user-select:none;
+  touch-action:none;
+}
+
+#scene{
+  position:fixed; inset:0;
+  width:100%; height:100%;
+  display:block;
+  background:#000;
+}
+
+/* ---------------- in-scene chrome ---------------- */
+
+#ui{
+  position:fixed; inset:0;
+  pointer-events:none;
+  opacity:0;
+  transition:opacity 2.6s ease 1.2s;
+  z-index:5;
+}
+body.entered #ui{ opacity:1; }
+
+#brand{
+  position:absolute;
+  left:clamp(18px,3.2vw,52px);
+  top:clamp(18px,3.4vh,44px);
+  display:flex; flex-direction:column; gap:.5em;
+}
+#brand .jp{
+  font-size:clamp(13px,1.35vw,19px);
+  letter-spacing:.42em;
+  color:rgba(233,223,202,.62);
+  text-indent:.42em;
+}
+#brand .en{
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size:clamp(7px,.62vw,9px);
+  letter-spacing:.52em;
+  color:rgba(233,223,202,.24);
+}
+
+#readout{
+  position:absolute;
+  left:clamp(18px,3.2vw,52px);
+  right:clamp(18px,3.2vw,52px);
+  bottom:clamp(16px,3vh,38px);
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-end;
+  gap:24px;
+}
+#readout .cell{
+  display:flex; flex-direction:column; gap:.7em;
+}
+#readout .cell.right{ align-items:flex-end; text-align:right; }
+#readout .val{
+  font-family: "SF Mono", ui-monospace, "Helvetica Neue", monospace;
+  font-size:clamp(11px,.95vw,14px);
+  letter-spacing:.24em;
+  font-variant-numeric: tabular-nums;
+  color:rgba(233,223,202,.52);
+}
+#readout .lbl{
+  font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;
+  font-size:clamp(6px,.55vw,8px);
+  letter-spacing:.44em;
+  color:rgba(233,223,202,.2);
+  white-space:nowrap;
+}
+
+#sound{
+  position:absolute;
+  right:clamp(18px,3.2vw,52px);
+  top:clamp(18px,3.4vh,44px);
+  pointer-events:auto;
+  display:flex; align-items:center; gap:.8em;
+  background:none; border:0;
+  color:rgba(233,223,202,.30);
+  font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;
+  font-size:8px; letter-spacing:.42em;
+  padding:10px 2px;
+  cursor:pointer;
+  transition:color .5s ease;
+}
+#sound:hover{ color:rgba(233,223,202,.7); }
+#sound .dot{
+  width:5px; height:5px; border-radius:50%;
+  background:rgba(233,223,202,.7);
+  box-shadow:0 0 10px rgba(233,223,202,.6);
+  transition:background .5s ease, box-shadow .5s ease;
+}
+#sound[aria-pressed="false"] .dot{
+  background:rgba(233,223,202,.16);
+  box-shadow:none;
+}
+#sound:focus-visible{ outline:1px solid rgba(233,223,202,.4); outline-offset:6px; }
+
+#hint{
+  position:absolute;
+  left:50%; bottom:clamp(16px,3vh,38px);
+  transform:translateX(-50%);
+  font-size:clamp(9px,.8vw,11px);
+  letter-spacing:.34em;
+  color:rgba(233,223,202,.22);
+  white-space:nowrap;
+  transition:opacity 2.4s ease;
+}
+#hint.gone{ opacity:0; }
+
+/* ---------------- gate ---------------- */
+
+#gate{
+  position:fixed; inset:0;
+  z-index:20;
+  display:flex; align-items:center; justify-content:center;
+  background:
+    radial-gradient(ellipse 62% 54% at 50% 48%, rgba(14,11,8,.34) 0%, rgba(0,0,0,.84) 60%, #000 100%);
+  transition:opacity 2.4s ease, visibility 2.4s;
+  cursor:pointer;
+}
+body.entered #gate{
+  opacity:0;
+  visibility:hidden;
+  transition:opacity 2.9s ease, visibility 0s linear 2.9s;
+}
+#gate .frame{
+  position:relative;
+  display:flex; flex-direction:column; align-items:center;
+  text-align:center;
+  padding:clamp(28px,5vh,58px) clamp(24px,6vw,90px);
+  opacity:0;
+  animation:gateIn 3.2s cubic-bezier(.16,.84,.24,1) .35s forwards;
+}
+@keyframes gateIn{
+  from{ opacity:0; transform:translateY(10px); }
+  to{ opacity:1; transform:none; }
+}
+#gate .hair{
+  position:absolute; left:0; right:0; height:1px;
+  background:linear-gradient(90deg, transparent, rgba(233,223,202,.20), transparent);
+}
+#gate .hair.top{ top:0; }
+#gate .hair.bottom{ bottom:0; }
+
+#gate h1{
+  font-weight:400;
+  font-size:clamp(26px,4vw,54px);
+  letter-spacing:.44em;
+  text-indent:.44em;
+  color:#eee3cd;
+  text-shadow:0 0 42px rgba(255,206,140,.22), 0 0 110px rgba(255,180,90,.10);
+}
+#gate .en{
+  margin-top:1.55em;
+  font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;
+  font-weight:300;
+  font-size:clamp(7px,.7vw,10px);
+  letter-spacing:.66em;
+  color:rgba(233,223,202,.30);
+}
+#gate .lead{
+  margin-top:clamp(26px,5vh,54px);
+  font-size:clamp(11px,1.05vw,15px);
+  letter-spacing:.28em;
+  color:rgba(233,223,202,.52);
+}
+#gate button{
+  margin-top:clamp(30px,5.4vh,58px);
+  padding:13px 42px 13px 46px;
+  background:transparent;
+  border:1px solid rgba(233,223,202,.20);
+  border-radius:999px;
+  color:rgba(233,223,202,.82);
+  font-family:inherit;
+  font-size:clamp(10px,.9vw,12px);
+  letter-spacing:.46em;
+  cursor:pointer;
+  transition:background .6s ease, border-color .6s ease, color .6s ease;
+}
+#gate button:hover,
+#gate button:focus-visible{
+  background:rgba(233,223,202,.05);
+  border-color:rgba(233,223,202,.42);
+  color:#f6ecd8;
+  outline:none;
+}
+#gate .note{
+  margin-top:clamp(20px,3.4vh,34px);
+  font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;
+  font-size:clamp(6px,.55vw,8px);
+  letter-spacing:.34em;
+  color:rgba(233,223,202,.18);
+}
+
+.nojs{
+  position:fixed; inset:0;
+  display:flex; align-items:center; justify-content:center;
+  font-size:13px; letter-spacing:.2em;
+  color:rgba(233,223,202,.6);
+  z-index:50;
+}
+
+@media (max-width:640px){
+  #readout .cell.right{ display:none; }
+  #hint{ font-size:8px; letter-spacing:.22em; }
+  #brand .en{ display:none; }
+}
+
+@media (prefers-reduced-motion: reduce){
+  #gate .frame{ animation-duration:.01s; }
+  #ui{ transition-duration:.6s; }
+}
